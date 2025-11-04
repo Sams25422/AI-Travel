@@ -3,11 +3,22 @@
  * Root navigation structure for Atlas
  */
 
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
-import {settingsStorage} from '@utils/storage';
-import {SCREEN_NAMES} from '@utils/constants';
+import {useApp} from '@contexts';
+import {LoadingSpinner} from '@components/common';
+
+// Import Screens
+import {
+  WelcomeScreen,
+  LocationPermissionScreen,
+  PhotoPermissionScreen,
+  OnboardingCompleteScreen,
+} from '../screens/Onboarding';
+import {HomeScreen} from '../screens/Home';
+import {TripTimelineScreen} from '../screens/Trip';
+import MainTabNavigator from './MainTabNavigator';
 
 // Navigation type definitions
 export type RootStackParamList = {
@@ -35,20 +46,11 @@ const Stack = createStackNavigator<RootStackParamList>();
  * App Navigator Component
  */
 export const AppNavigator: React.FC = () => {
-  const [isOnboardingComplete, setIsOnboardingComplete] = useState<boolean | null>(null);
+  const {isOnboardingComplete, isLoading} = useApp();
 
-  useEffect(() => {
-    checkOnboardingStatus();
-  }, []);
-
-  const checkOnboardingStatus = async () => {
-    const completed = await settingsStorage.isOnboardingCompleted();
-    setIsOnboardingComplete(completed);
-  };
-
-  // Loading state
-  if (isOnboardingComplete === null) {
-    return null; // TODO: Add splash screen
+  // Show loading while checking onboarding status
+  if (isLoading) {
+    return <LoadingSpinner message="Loading Atlas..." />;
   }
 
   return (
@@ -57,20 +59,21 @@ export const AppNavigator: React.FC = () => {
         initialRouteName={isOnboardingComplete ? 'MainTabs' : 'OnboardingWelcome'}
         screenOptions={{
           headerShown: false,
+          cardStyle: {backgroundColor: 'white'},
         }}>
         {!isOnboardingComplete ? (
           // Onboarding Stack
           <>
-            <Stack.Screen name="OnboardingWelcome" component={PlaceholderScreen} />
-            <Stack.Screen name="OnboardingLocation" component={PlaceholderScreen} />
-            <Stack.Screen name="OnboardingPhotos" component={PlaceholderScreen} />
-            <Stack.Screen name="OnboardingComplete" component={PlaceholderScreen} />
+            <Stack.Screen name="OnboardingWelcome" component={WelcomeScreen} />
+            <Stack.Screen name="OnboardingLocation" component={LocationPermissionScreen} />
+            <Stack.Screen name="OnboardingPhotos" component={PhotoPermissionScreen} />
+            <Stack.Screen name="OnboardingComplete" component={OnboardingCompleteScreen} />
           </>
         ) : (
           // Main App Stack
           <>
-            <Stack.Screen name="MainTabs" component={PlaceholderScreen} />
-            <Stack.Screen name="TripTimeline" component={PlaceholderScreen} />
+            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+            <Stack.Screen name="TripTimeline" component={TripTimelineScreen} />
             <Stack.Screen name="StepDetail" component={PlaceholderScreen} />
             <Stack.Screen name="StepEdit" component={PlaceholderScreen} />
             <Stack.Screen name="Settings" component={PlaceholderScreen} />
@@ -82,9 +85,9 @@ export const AppNavigator: React.FC = () => {
   );
 };
 
-// Placeholder component for screens
+// Temporary placeholder for unimplemented screens
 const PlaceholderScreen: React.FC = () => {
-  return null; // Will be replaced with actual screens
+  return <LoadingSpinner message="Screen coming soon..." />;
 };
 
 export default AppNavigator;

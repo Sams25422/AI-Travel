@@ -4,8 +4,11 @@
  */
 
 import React from 'react';
+import {Text} from 'react-native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {SCREEN_NAMES, COLORS} from '@utils/constants';
+import {HomeScreen} from '../screens/Home';
+import {COLORS} from '@utils/constants';
+import {LoadingSpinner} from '@components/common';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -29,22 +32,28 @@ export const MainTabNavigator: React.FC = () => {
           backgroundColor: COLORS.white,
           borderTopColor: COLORS.gray200,
           borderTopWidth: 1,
+          paddingBottom: 5,
+          height: 60,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
         },
       }}>
       <Tab.Screen
         name="Home"
-        component={PlaceholderScreen}
+        component={HomeScreen}
         options={{
-          tabBarLabel: 'Map',
-          // TODO: Add icon
+          tabBarLabel: 'Journeys',
+          tabBarIcon: ({color}) => <Text style={{fontSize: 24}}>🗺️</Text>,
         }}
       />
       <Tab.Screen
         name="TripList"
         component={PlaceholderScreen}
         options={{
-          tabBarLabel: 'Trips',
-          // TODO: Add icon
+          tabBarLabel: 'Active Trip',
+          tabBarIcon: ({color}) => <Text style={{fontSize: 24}}>✈️</Text>,
         }}
       />
       <Tab.Screen
@@ -52,16 +61,16 @@ export const MainTabNavigator: React.FC = () => {
         component={PlaceholderScreen}
         options={{
           tabBarLabel: 'Settings',
-          // TODO: Add icon
+          tabBarIcon: ({color}) => <Text style={{fontSize: 24}}>⚙️</Text>,
         }}
       />
     </Tab.Navigator>
   );
 };
 
-// Placeholder component
+// Placeholder component for unimplemented tabs
 const PlaceholderScreen: React.FC = () => {
-  return null;
+  return <LoadingSpinner message="Coming soon..." />;
 };
 
 export default MainTabNavigator;

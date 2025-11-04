@@ -7,6 +7,7 @@ import React, {useEffect} from 'react';
 import {StatusBar, SafeAreaView, StyleSheet} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import AppNavigator from './src/navigation/AppNavigator';
+import {AppProvider, TripProvider} from './src/contexts';
 import {TrackerService, CurationService, PermissionService} from './src/services';
 import {COLORS} from './src/utils/constants';
 import {log} from './src/utils/helpers';
@@ -35,10 +36,14 @@ const App: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-        <AppNavigator />
-      </SafeAreaView>
+      <AppProvider>
+        <TripProvider>
+          <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
+            <AppNavigator />
+          </SafeAreaView>
+        </TripProvider>
+      </AppProvider>
     </GestureHandlerRootView>
   );
 };

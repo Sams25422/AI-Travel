@@ -4,9 +4,10 @@
  */
 
 import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {View, Text, StyleSheet, Image} from 'react-native';
 import {StackNavigationProp} from '@react-navigation/stack';
 import {RootStackParamList} from '../../navigation/AppNavigator';
+import {Button} from '@components/common';
 import {COLORS, FONT_SIZES, SPACING} from '@utils/constants';
 
 type WelcomeScreenProps = {
@@ -21,26 +22,55 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({navigation}) => {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
+        {/* Hero Icon/Illustration Placeholder */}
+        <View style={styles.iconContainer}>
+          <Text style={styles.iconPlaceholder}>🗺️</Text>
+        </View>
+
         <Text style={styles.title}>Atlas</Text>
         <Text style={styles.subtitle}>The journal that writes itself</Text>
+
+        <View style={styles.features}>
+          <FeatureItem
+            icon="📍"
+            text="Automatically tracks your journey"
+          />
+          <FeatureItem
+            icon="📸"
+            text="Curates your best photos"
+          />
+          <FeatureItem
+            icon="📖"
+            text="Creates a beautiful memory book"
+          />
+        </View>
+
         <Text style={styles.description}>
-          Live your trip. We'll create the perfect memory book.
+          Set it and forget it. Live your trip. We'll write the journal. You buy the book.
         </Text>
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.button} onPress={handleStart}>
-          <Text style={styles.buttonText}>Get Started</Text>
-        </TouchableOpacity>
+        <Button title="Get Started" onPress={handleStart} size="large" fullWidth />
+        <Text style={styles.privacyNote}>
+          🔒 100% private. Your data never leaves your device.
+        </Text>
       </View>
     </View>
   );
 };
 
+const FeatureItem: React.FC<{icon: string; text: string}> = ({icon, text}) => (
+  <View style={styles.featureItem}>
+    <Text style={styles.featureIcon}>{icon}</Text>
+    <Text style={styles.featureText}>{text}</Text>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.white,
   },
   content: {
     flex: 1,
@@ -48,39 +78,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.xl,
   },
+  iconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  iconPlaceholder: {
+    fontSize: 64,
+  },
   title: {
-    fontSize: FONT_SIZES.xxxl,
+    fontSize: 48,
     fontWeight: 'bold',
     color: COLORS.primary,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   subtitle: {
     fontSize: FONT_SIZES.xl,
     fontWeight: '600',
     color: COLORS.textPrimary,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.xl,
     textAlign: 'center',
   },
-  description: {
+  features: {
+    width: '100%',
+    marginBottom: SPACING.lg,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+  },
+  featureIcon: {
+    fontSize: 24,
+    marginRight: SPACING.md,
+  },
+  featureText: {
     fontSize: FONT_SIZES.md,
+    color: COLORS.textPrimary,
+  },
+  description: {
+    fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 20,
   },
   footer: {
     padding: SPACING.xl,
   },
-  button: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
+  privacyNote: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
   },
 });
 
