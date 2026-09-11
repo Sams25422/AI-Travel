@@ -22,6 +22,7 @@ import StepEditScreen from '../screens/Trip/StepEditScreen';
 import BookPreviewScreen from '../screens/Book/BookPreviewScreen';
 import CheckoutScreen from '../screens/Book/CheckoutScreen';
 import OrderConfirmationScreen from '../screens/Book/OrderConfirmationScreen';
+import AgentChatScreen from '../screens/Agent/AgentChatScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -112,6 +113,11 @@ export default function AppNavigator() {
               name="OrderConfirmation"
               component={OrderConfirmationScreen}
               options={{headerShown: false}}
+            />
+            <RootStack.Screen
+              name="AgentChat"
+              component={AgentChatScreen}
+              options={{title: 'Atlas agent', headerTintColor: COLORS.primary}}
             />
           </>
         )}

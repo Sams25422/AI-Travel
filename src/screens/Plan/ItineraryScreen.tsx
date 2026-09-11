@@ -224,6 +224,18 @@ export default function ItineraryScreen({navigation, route}: Props) {
 
       {message ? <Text style={styles.message}>{message}</Text> : null}
 
+      <Pressable
+        style={styles.agentBtn}
+        onPress={() =>
+          navigation.navigate('AgentChat', {
+            tripId,
+            destinationId: trip?.destinationId,
+            destinationName: trip?.destinationName || trip?.name,
+          })
+        }>
+        <Text style={styles.agentBtnText}>Ask Atlas agent</Text>
+      </Pressable>
+
       {trip?.status === 'planned' || trip?.status === 'paused' ? (
         <Pressable style={styles.cta} onPress={onStart} disabled={busy}>
           {busy ? (
@@ -371,6 +383,16 @@ const styles = StyleSheet.create({
   },
   addBtnText: {color: COLORS.textInverse, fontWeight: '700'},
   message: {marginTop: SPACING.md, color: COLORS.accent},
+  agentBtn: {
+    marginTop: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.hero,
+    backgroundColor: COLORS.hero,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+  },
+  agentBtnText: {color: COLORS.textInverse, fontWeight: '700'},
   cta: {
     marginTop: SPACING.lg,
     backgroundColor: COLORS.primary,

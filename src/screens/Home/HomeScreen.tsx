@@ -21,6 +21,7 @@ import {
   REGIONS,
   parseAskAtlas,
 } from '../../data/destinations';
+import {getGlobalTrending} from '../../data/trending';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList, 'Home'>,
@@ -197,7 +198,41 @@ export default function HomeScreen({navigation}: Props) {
         ))}
       </ScrollView>
 
+      <Text style={styles.sectionTitle}>Trending now</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.cardRow}>
+        {getGlobalTrending(6).map(item => (
+          <Pressable
+            key={item.id}
+            style={styles.trendCard}
+            onPress={() =>
+              navigation.navigate('AgentChat', {
+                destinationId: item.destinationId,
+              })
+            }>
+            <Image source={{uri: item.imageUri}} style={styles.trendImage} />
+            <View style={styles.trendBody}>
+              <Text style={styles.trendHeat}>Heat {item.heat}</Text>
+              <Text style={styles.trendTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+              <Text style={styles.trendBlurb} numberOfLines={2}>
+                {item.blurb}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+
       <View style={styles.actions}>
+        <Pressable
+          style={styles.agentBtn}
+          onPress={() => navigation.navigate('AgentChat', {})}
+          disabled={busy}>
+          <Text style={styles.primaryText}>Ask Atlas agent</Text>
+        </Pressable>
         <Pressable
           style={styles.primaryBtn}
           onPress={() => navigation.navigate('PlanTrip', {})}
@@ -407,6 +442,42 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.xs,
   },
   actions: {paddingHorizontal: SPACING.lg, marginBottom: SPACING.md},
+  agentBtn: {
+    backgroundColor: COLORS.hero,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  trendCard: {
+    width: 220,
+    marginRight: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.gray200,
+  },
+  trendImage: {width: '100%', height: 110},
+  trendBody: {padding: SPACING.sm},
+  trendHeat: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  trendTitle: {
+    marginTop: 4,
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+    fontSize: FONT_SIZES.sm,
+  },
+  trendBlurb: {
+    marginTop: 4,
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    lineHeight: 16,
+  },
   primaryBtn: {
     backgroundColor: COLORS.primary,
     paddingVertical: SPACING.md,

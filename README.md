@@ -15,6 +15,7 @@ Privacy-first travel companion: **plan the trip**, then let Atlas **journal it**
 - Trip timeline with manual step editing
 - Book preview + demo checkout (Stripe/POD-ready order model)
 - Local-first storage (AsyncStorage) — no Firebase required for MVP
+- **Phase 2 agent layer:** Ask Atlas chat with weather (Open-Meteo), trending activities, and flight/hotel deep-links (no OTA checkout)
 
 ## Spec changes vs original PRD
 
@@ -26,7 +27,8 @@ Privacy-first travel companion: **plan the trip**, then let Atlas **journal it**
 | Mapbox | Lightweight map UI + demo path | No token required for MVP |
 | Stripe + Lulu live checkout | Demo checkout with real order model | Same UI/data shape; wire keys later |
 | Always-on background GPS | `expo-location` + Paris demo simulator | Verifiable on web and devices |
-| Live OTA booking | Planning stubs / templates only | Keep MVP focused; book later |
+| Live OTA booking | Planning stubs + partner deep-links | Search/compare elsewhere; Atlas stays plan + journal |
+| External LLM agent | On-device intent agent + tools | Works offline-first; no API key required for MVP |
 
 ## Run
 

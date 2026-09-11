@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,44 @@ import {
   ScrollView,
   Image,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../navigation/types';
 import {getDestination} from '../../data/destinations';
+import {getTrendingForDestination} from '../../data/trending';
+import AgentService from '../../services/AgentService';
+import TravelLinksService from '../../services/TravelLinksService';
 import {COLORS, FONT_SIZES, SPACING, RADIUS} from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DestinationDetail'>;
 
 export default function DestinationDetailScreen({navigation, route}: Props) {
   const destination = getDestination(route.params.destinationId);
+  const [weatherLine, setWeatherLine] = useState('Checking forecast…');
+  const [weatherBusy, setWeatherBusy] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!destination) return;
+      setWeatherBusy(true);
+      try {
+        const line = await AgentService.weatherBrief(
+          destination.center,
+          destination.name,
+        );
+        if (alive) setWeatherLine(line);
+      } catch {
+        if (alive) setWeatherLine('Forecast unavailable right now.');
+      } finally {
+        if (alive) setWeatherBusy(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [destination]);
 
   if (!destination) {
     return (
@@ -24,6 +52,14 @@ export default function DestinationDetailScreen({navigation, route}: Props) {
       </View>
     );
   }
+
+  const trending = getTrendingForDestination(destination.id).slice(0, 3);
+  const flightLinks = TravelLinksService.flightSearch({
+    destination: destination.name,
+  }).slice(0, 2);
+  const hotelLinks = TravelLinksService.hotelSearch({
+    city: destination.name,
+  }).slice(0, 2);
 
   return (
     <View style={styles.container}>
@@ -41,6 +77,52 @@ export default function DestinationDetailScreen({navigation, route}: Props) {
             <Text style={styles.meta}>from ${destination.priceFrom}</Text>
           </View>
           <Text style={styles.description}>{destination.description}</Text>
+
+          <View style={styles.weatherCard}>
+            <Text style={styles.weatherLabel}>Weather now</Text>
+            {weatherBusy ? (
+              <ActivityIndicator color={COLORS.primary} />
+            ) : (
+              <Text style={styles.weatherText}>{weatherLine}</Text>
+            )}
+          </View>
+
+          <Text style={styles.section}>Trending here</Text>
+          {trending.map(item => (
+            <View key={item.id} style={styles.trendRow}>
+              <Image source={{uri: item.imageUri}} style={styles.trendThumb} />
+              <View style={styles.trendBody}>
+                <Text style={styles.trendHeat}>Heat {item.heat}</Text>
+                <Text style={styles.trendTitle}>{item.title}</Text>
+                <Text style={styles.trendBlurb}>{item.blurb}</Text>
+              </View>
+            </View>
+          ))}
+
+          <Text style={styles.section}>Search & book</Text>
+          <Text style={styles.sectionHint}>
+            Deep-links to trusted partners — no OTA checkout inside Atlas.
+          </Text>
+          {[...flightLinks, ...hotelLinks].map(link => (
+            <Pressable
+              key={link.id}
+              style={styles.linkRow}
+              onPress={() => TravelLinksService.open(link)}>
+              <Text style={styles.linkLabel}>{link.label}</Text>
+              <Text style={styles.linkSub}>{link.subtitle}</Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            style={styles.agentBtn}
+            onPress={() =>
+              navigation.navigate('AgentChat', {
+                destinationId: destination.id,
+                destinationName: destination.name,
+              })
+            }>
+            <Text style={styles.agentBtnText}>Ask Atlas agent about {destination.name}</Text>
+          </Pressable>
 
           <Text style={styles.section}>Suggested rhythm</Text>
           {destination.template.slice(0, 5).map((stop, i) => (
@@ -98,50 +180,85 @@ const styles = StyleSheet.create({
   tagline: {
     marginTop: SPACING.xs,
     color: COLORS.textSecondary,
-    fontSize: FONT_SIZES.md,
   },
   metaRow: {
     flexDirection: 'row',
     gap: SPACING.md,
     marginTop: SPACING.md,
-    marginBottom: SPACING.md,
   },
-  meta: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: FONT_SIZES.sm,
-    backgroundColor: COLORS.parchment,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
-    overflow: 'hidden',
-  },
+  meta: {color: COLORS.primary, fontWeight: '600', fontSize: FONT_SIZES.sm},
   description: {
+    marginTop: SPACING.md,
     color: COLORS.textPrimary,
-    lineHeight: 24,
-    fontSize: FONT_SIZES.md,
+    lineHeight: 22,
   },
-  section: {
+  weatherCard: {
     marginTop: SPACING.lg,
+    backgroundColor: COLORS.parchment,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+  },
+  weatherLabel: {
+    color: COLORS.accent,
+    fontWeight: '700',
+    fontSize: FONT_SIZES.xs,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  weatherText: {color: COLORS.textPrimary, lineHeight: 20},
+  section: {
+    marginTop: SPACING.xl,
     marginBottom: SPACING.sm,
     fontSize: FONT_SIZES.lg,
     fontWeight: '700',
     color: COLORS.primary,
   },
-  stop: {
-    flexDirection: 'row',
-    marginBottom: SPACING.md,
-    gap: SPACING.md,
+  sectionHint: {
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    marginBottom: SPACING.sm,
   },
+  trendRow: {
+    flexDirection: 'row',
+    marginBottom: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.gray200,
+  },
+  trendThumb: {width: 72, height: 72},
+  trendBody: {flex: 1, padding: SPACING.sm},
+  trendHeat: {color: COLORS.accent, fontSize: FONT_SIZES.xs, fontWeight: '700'},
+  trendTitle: {color: COLORS.textPrimary, fontWeight: '700', marginTop: 2},
+  trendBlurb: {color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, marginTop: 2},
+  linkRow: {
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  linkLabel: {color: COLORS.primary, fontWeight: '700'},
+  linkSub: {color: COLORS.textSecondary, fontSize: FONT_SIZES.sm, marginTop: 2},
+  agentBtn: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.hero,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  agentBtnText: {color: COLORS.textInverse, fontWeight: '700'},
+  stop: {flexDirection: 'row', marginBottom: SPACING.md},
   stopDay: {
-    width: 56,
+    width: 64,
     color: COLORS.accent,
     fontWeight: '700',
     fontSize: FONT_SIZES.sm,
   },
   stopBody: {flex: 1},
-  stopTitle: {fontWeight: '600', color: COLORS.textPrimary},
-  stopNotes: {marginTop: 2, color: COLORS.textSecondary, fontSize: FONT_SIZES.sm},
+  stopTitle: {color: COLORS.textPrimary, fontWeight: '600'},
+  stopNotes: {color: COLORS.textSecondary, marginTop: 2, fontSize: FONT_SIZES.sm},
   footer: {
     position: 'absolute',
     left: 0,
@@ -158,10 +275,10 @@ const styles = StyleSheet.create({
   priceLabel: {color: COLORS.textSecondary, fontSize: FONT_SIZES.xs},
   price: {color: COLORS.primary, fontWeight: '700', fontSize: FONT_SIZES.lg},
   cta: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.accent,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.lg,
   },
   ctaText: {color: COLORS.textInverse, fontWeight: '700'},
 });

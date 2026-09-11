@@ -22,4 +22,9 @@ export type RootStackParamList = {
   BookPreview: {tripId: string};
   Checkout: {tripId: string};
   OrderConfirmation: {orderId: string; tripId: string};
+  AgentChat: {
+    destinationId?: string;
+    destinationName?: string;
+    tripId?: string;
+  };
 };

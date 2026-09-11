@@ -5,3 +5,6 @@ export {default as PlanService} from './PlanService';
 export {default as JournalingService} from './JournalingService';
 export {default as CurationService} from './CurationService';
 export {default as BookService} from './BookService';
+export {default as WeatherService} from './WeatherService';
+export {default as TravelLinksService} from './TravelLinksService';
+export {default as AgentService} from './AgentService';
