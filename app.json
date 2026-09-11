@@ -43,6 +43,9 @@
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "atlasAgentUrl": "http://localhost:8787"
+    },
     "plugins": [
       [
         "expo-location",

@@ -1,6 +1,6 @@
 /**
- * AgentService — local travel-agent brain with tools.
- * No LLM API key: intent routing + tool results + templated replies.
+ * AgentService — travel-agent brain with tools.
+ * Prefers Claude Sonnet 5 via local agent proxy; falls back to intent router offline.
  */
 import type {GeoPoint, ItineraryItem, Trip} from '../models';
 import {DESTINATIONS, getDestination} from '../data/destinations';
@@ -9,9 +9,10 @@ import {
   getTrendingForDestination,
   type TrendingActivity,
 } from '../data/trending';
+import {ATLAS_AGENT_URL} from '../config/agent';
 import WeatherService, {type WeatherSnapshot} from './WeatherService';
 import TravelLinksService, {type TravelLink} from './TravelLinksService';
-import {generateUUID, nowISO, log} from '../utils/helpers';
+import {generateUUID, nowISO, log, logError} from '../utils/helpers';
 
 export type AgentRole = 'user' | 'agent' | 'system';
 
@@ -105,10 +106,88 @@ class AgentService {
     userText: string,
     ctx: AgentContext = {},
     itinerary: ItineraryItem[] = [],
+    history: Array<{role: 'user' | 'agent'; text: string}> = [],
+  ): Promise<AgentMessage> {
+    const llm = await this.tryLlmReply(userText, ctx, itinerary, history);
+    if (llm) return llm;
+    return this.localReply(userText, ctx, itinerary);
+  }
+
+  private async tryLlmReply(
+    userText: string,
+    ctx: AgentContext,
+    itinerary: ItineraryItem[],
+    history: Array<{role: 'user' | 'agent'; text: string}>,
+  ): Promise<AgentMessage | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      const res = await fetch(`${ATLAS_AGENT_URL}/agent/chat`, {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        signal: controller.signal,
+        body: JSON.stringify({
+          message: userText,
+          history: history
+            .filter(h => h.role === 'user' || h.role === 'agent')
+            .slice(-8)
+            .map(h => ({
+              role: h.role === 'agent' ? 'assistant' : 'user',
+              text: h.text,
+            })),
+          context: {
+            destinationId: ctx.destinationId,
+            destinationName: ctx.destinationName,
+            tripId: ctx.tripId,
+            tripName: ctx.tripName,
+            nights: ctx.nights,
+            originCity: ctx.originCity,
+          },
+          itinerary,
+        }),
+      });
+      clearTimeout(timer);
+      if (res.status === 503) {
+        log('AgentService: LLM proxy unavailable, using local router');
+        return null;
+      }
+      if (!res.ok) {
+        log('AgentService: LLM proxy error', res.status);
+        return null;
+      }
+      const data = (await res.json()) as {
+        text?: string;
+        links?: TravelLink[];
+        activities?: TrendingActivity[];
+        weather?: WeatherSnapshot;
+        suggestions?: string[];
+      };
+      if (!data.text?.trim()) return null;
+      log('AgentService: LLM reply');
+      return {
+        id: generateUUID(),
+        role: 'agent',
+        createdAt: nowISO(),
+        text: data.text,
+        links: data.links,
+        activities: data.activities,
+        weather: data.weather,
+        suggestions: data.suggestions,
+      };
+    } catch (error) {
+      logError(error as Error, {context: 'AgentService.tryLlmReply'});
+      return null;
+    }
+  }
+
+  private async localReply(
+    userText: string,
+    ctx: AgentContext = {},
+    itinerary: ItineraryItem[] = [],
   ): Promise<AgentMessage> {
     const intent = detectIntent(userText);
     const dest = resolveDestination(ctx, userText);
-    log('AgentService: intent', intent, dest.id);
+    log('AgentService: local intent', intent, dest.id);
 
     switch (intent) {
       case 'greeting':

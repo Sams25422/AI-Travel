@@ -10,7 +10,8 @@
     "web": "expo start --web --port 8081",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "web:e2e": "node scripts/web-e2e.mjs"
+    "web:e2e": "node scripts/web-e2e.mjs",
+    "agent:server": "tsx server/agentServer.ts"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",

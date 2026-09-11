@@ -41,5 +41,5 @@ export const BOOK_SPECS = {
 export const FEATURE_FLAGS = {
   ENABLE_BOOK_ORDERING: true,
   ENABLE_DEMO_SIMULATOR: true,
-  DEBUG_MODE: __DEV__,
+  DEBUG_MODE: typeof __DEV__ !== 'undefined' ? __DEV__ : false,
 } as const;

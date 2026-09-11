@@ -52,10 +52,14 @@ export default function AgentChatScreen({route}: Props) {
     setBusy(true);
     try {
       const itinerary = tripId ? await PlanService.getItinerary(tripId) : [];
+      const history = messages
+        .filter(m => m.role === 'user' || m.role === 'agent')
+        .map(m => ({role: m.role as 'user' | 'agent', text: m.text}));
       const reply = await AgentService.reply(
         trimmed,
         {destinationId, destinationName, tripId},
         itinerary,
+        history,
       );
       setMessages(prev => [...prev, reply]);
       requestAnimationFrame(() =>
