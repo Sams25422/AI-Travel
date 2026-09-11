@@ -1,256 +1,122 @@
 /**
- * PermissionService - Centralized Permission Management
- *
- * Handles all app permissions:
- * - Location (Always, When In Use)
- * - Photo Library
- * - Notifications
- *
- * Critical for onboarding flow and app functionality.
+ * PermissionService — Expo location + media library
  */
+import * as Location from 'expo-location';
+import * as MediaLibrary from 'expo-media-library';
+import {Linking, Platform} from 'react-native';
+import type {AppPermissions} from '../models';
+import {settingsStorage} from '../utils/storage';
+import {log, logError} from '../utils/helpers';
 
-import {AppPermissions} from '@models';
-import {log, logError} from '@utils/helpers';
-import {storage, STORAGE_KEYS} from '@utils/storage';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'restricted';
-
-export type PermissionType = 'location' | 'locationAlways' | 'photos' | 'notifications';
-
-// ============================================================================
-// PermissionService Class
-// ============================================================================
+export type PermissionStatus = 'granted' | 'denied' | 'undetermined' | 'restricted';
 
 class PermissionService {
-  /**
-   * Check all permissions status
-   */
-  async checkAllPermissions(): Promise<AppPermissions> {
+  async checkAll(): Promise<AppPermissions> {
     try {
-      const [locationAlways, locationWhenInUse, photoLibrary, notifications] = await Promise.all([
-        this.checkLocationAlwaysPermission(),
-        this.checkLocationWhenInUsePermission(),
-        this.checkPhotoLibraryPermission(),
-        this.checkNotificationPermission(),
+      const [fg, bg, photos] = await Promise.all([
+        Location.getForegroundPermissionsAsync(),
+        Location.getBackgroundPermissionsAsync(),
+        MediaLibrary.getPermissionsAsync(),
       ]);
 
       const permissions: AppPermissions = {
-        locationAlways: locationAlways === 'granted',
-        locationWhenInUse: locationWhenInUse === 'granted',
-        photoLibrary: photoLibrary === 'granted',
-        notifications: notifications === 'granted',
+        locationWhenInUse: fg.status === Location.PermissionStatus.GRANTED,
+        locationAlways:
+          bg.status === Location.PermissionStatus.GRANTED ||
+          (Platform.OS === 'web' && fg.status === Location.PermissionStatus.GRANTED),
+        photoLibrary:
+          photos.granted ||
+          photos.accessPrivileges === 'all' ||
+          photos.accessPrivileges === 'limited' ||
+          Platform.OS === 'web',
+        notifications: false,
       };
 
-      // Cache permissions
-      await storage.set(STORAGE_KEYS.PERMISSIONS, permissions);
-
+      await settingsStorage.savePermissions(permissions);
       return permissions;
     } catch (error) {
-      logError(error as Error, {context: 'PermissionService.checkAllPermissions'});
-
-      // Return default denied state
+      logError(error as Error, {context: 'PermissionService.checkAll'});
       return {
         locationAlways: false,
         locationWhenInUse: false,
-        photoLibrary: false,
+        photoLibrary: Platform.OS === 'web',
         notifications: false,
       };
     }
   }
 
-  /**
-   * Request location permission (Always)
-   *
-   * This is CRITICAL for Atlas. Without it, the app cannot function.
-   */
-  async requestLocationAlwaysPermission(): Promise<PermissionStatus> {
+  async requestLocationWhenInUse(): Promise<PermissionStatus> {
     try {
-      log('PermissionService: Requesting Location (Always) permission');
-
-      // TODO: Implement with native permission APIs
-      // iOS: CLLocationManager requestAlwaysAuthorization
-      // Android: ACCESS_FINE_LOCATION + ACCESS_BACKGROUND_LOCATION
-
-      // Mock implementation
-      const status: PermissionStatus = 'not-determined';
-
-      log('PermissionService: Location (Always) permission status:', status);
-      return status;
+      if (Platform.OS === 'web') {
+        await this.checkAll();
+        return 'granted';
+      }
+      const {status} = await Location.requestForegroundPermissionsAsync();
+      await this.checkAll();
+      return this.map(status);
     } catch (error) {
-      logError(error as Error, {context: 'PermissionService.requestLocationAlwaysPermission'});
-      return 'denied';
+      logError(error as Error, {context: 'requestLocationWhenInUse'});
+      return Platform.OS === 'web' ? 'granted' : 'denied';
     }
   }
 
-  /**
-   * Request location permission (When In Use)
-   * Fallback if user denies Always permission
-   */
-  async requestLocationWhenInUsePermission(): Promise<PermissionStatus> {
+  async requestLocationAlways(): Promise<PermissionStatus> {
     try {
-      log('PermissionService: Requesting Location (When In Use) permission');
-
-      // TODO: Implement with native permission APIs
-      // iOS: CLLocationManager requestWhenInUseAuthorization
-      // Android: ACCESS_FINE_LOCATION
-
-      // Mock implementation
-      const status: PermissionStatus = 'not-determined';
-
-      log('PermissionService: Location (When In Use) permission status:', status);
-      return status;
+      if (Platform.OS === 'web') {
+        await this.checkAll();
+        return 'granted';
+      }
+      const fg = await Location.requestForegroundPermissionsAsync();
+      if (fg.status !== Location.PermissionStatus.GRANTED) return this.map(fg.status);
+      const bg = await Location.requestBackgroundPermissionsAsync();
+      await this.checkAll();
+      return this.map(bg.status);
     } catch (error) {
-      logError(error as Error, {
-        context: 'PermissionService.requestLocationWhenInUsePermission',
-      });
-      return 'denied';
+      logError(error as Error, {context: 'requestLocationAlways'});
+      return Platform.OS === 'web' ? 'granted' : 'denied';
     }
   }
 
-  /**
-   * Request photo library permission
-   *
-   * CRITICAL: Must request "Full Access" not "Limited Access"
-   */
-  async requestPhotoLibraryPermission(): Promise<PermissionStatus> {
+  async requestPhotoLibrary(): Promise<PermissionStatus> {
     try {
-      log('PermissionService: Requesting Photo Library permission');
-
-      // TODO: Implement with native permission APIs
-      // iOS: PHPhotoLibrary requestAuthorization
-      // Android: READ_MEDIA_IMAGES (Android 13+) or READ_EXTERNAL_STORAGE
-
-      // Mock implementation
-      const status: PermissionStatus = 'not-determined';
-
-      log('PermissionService: Photo Library permission status:', status);
-      return status;
+      if (Platform.OS === 'web') {
+        await this.checkAll();
+        return 'granted';
+      }
+      const result = await MediaLibrary.requestPermissionsAsync();
+      await this.checkAll();
+      if (
+        result.granted ||
+        result.accessPrivileges === 'all' ||
+        result.accessPrivileges === 'limited'
+      ) {
+        return 'granted';
+      }
+      return result.canAskAgain ? 'undetermined' : 'denied';
     } catch (error) {
-      logError(error as Error, {context: 'PermissionService.requestPhotoLibraryPermission'});
-      return 'denied';
+      logError(error as Error, {context: 'requestPhotoLibrary'});
+      return Platform.OS === 'web' ? 'granted' : 'denied';
     }
   }
 
-  /**
-   * Request notification permission
-   */
-  async requestNotificationPermission(): Promise<PermissionStatus> {
-    try {
-      log('PermissionService: Requesting Notification permission');
-
-      // TODO: Implement with native permission APIs
-      // iOS: UNUserNotificationCenter requestAuthorization
-      // Android: POST_NOTIFICATIONS (Android 13+)
-
-      // Mock implementation
-      const status: PermissionStatus = 'not-determined';
-
-      log('PermissionService: Notification permission status:', status);
-      return status;
-    } catch (error) {
-      logError(error as Error, {context: 'PermissionService.requestNotificationPermission'});
-      return 'denied';
-    }
-  }
-
-  /**
-   * Check location (Always) permission status
-   */
-  async checkLocationAlwaysPermission(): Promise<PermissionStatus> {
-    // TODO: Implement
-    return 'not-determined';
-  }
-
-  /**
-   * Check location (When In Use) permission status
-   */
-  async checkLocationWhenInUsePermission(): Promise<PermissionStatus> {
-    // TODO: Implement
-    return 'not-determined';
-  }
-
-  /**
-   * Check photo library permission status
-   */
-  async checkPhotoLibraryPermission(): Promise<PermissionStatus> {
-    // TODO: Implement
-    return 'not-determined';
-  }
-
-  /**
-   * Check notification permission status
-   */
-  async checkNotificationPermission(): Promise<PermissionStatus> {
-    // TODO: Implement
-    return 'not-determined';
-  }
-
-  /**
-   * Open device settings
-   * Used when permissions are denied and user needs to manually enable
-   */
   async openSettings(): Promise<void> {
     try {
-      log('PermissionService: Opening app settings');
-
-      // TODO: Implement
-      // iOS: Linking.openURL('app-settings:')
-      // Android: Linking.openSettings()
+      await Linking.openSettings();
     } catch (error) {
-      logError(error as Error, {context: 'PermissionService.openSettings'});
+      logError(error as Error, {context: 'openSettings'});
     }
   }
 
-  /**
-   * Check if critical permissions are granted
-   * (Location Always + Photo Library)
-   */
-  async hasCriticalPermissions(): Promise<boolean> {
-    const permissions = await this.checkAllPermissions();
-    return permissions.locationAlways && permissions.photoLibrary;
+  async hasCritical(): Promise<boolean> {
+    const p = await this.checkAll();
+    return (p.locationAlways || p.locationWhenInUse) && p.photoLibrary;
   }
 
-  /**
-   * Get permission status as user-friendly message
-   */
-  getPermissionStatusMessage(type: PermissionType, status: PermissionStatus): string {
-    const messages = {
-      location: {
-        granted: 'Location access granted',
-        denied: 'Location access denied. Please enable in Settings.',
-        'not-determined': 'Location permission not yet requested',
-        restricted: 'Location access restricted by device policy',
-      },
-      locationAlways: {
-        granted: 'Always-on location access granted',
-        denied: 'Always-on location denied. Atlas needs this to track your journey.',
-        'not-determined': 'Always-on location permission not yet requested',
-        restricted: 'Location access restricted by device policy',
-      },
-      photos: {
-        granted: 'Photo library access granted',
-        denied: 'Photo library access denied. Please enable in Settings.',
-        'not-determined': 'Photo library permission not yet requested',
-        restricted: 'Photo library access restricted',
-      },
-      notifications: {
-        granted: 'Notification access granted',
-        denied: 'Notifications disabled',
-        'not-determined': 'Notification permission not yet requested',
-        restricted: 'Notifications restricted',
-      },
-    };
-
-    return messages[type][status];
+  private map(status: Location.PermissionStatus): PermissionStatus {
+    if (status === Location.PermissionStatus.GRANTED) return 'granted';
+    if (status === Location.PermissionStatus.DENIED) return 'denied';
+    return 'undetermined';
   }
 }
-
-// ============================================================================
-// Export Singleton Instance
-// ============================================================================
 
 export default new PermissionService();

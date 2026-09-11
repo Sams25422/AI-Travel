@@ -1,4 +1,65 @@
 {
-  "name": "Atlas",
-  "displayName": "Atlas"
+  "expo": {
+    "name": "Atlas",
+    "slug": "atlas",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B4D3E"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.atlas.travel",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Atlas uses your location to build your travel journal.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Atlas needs always-on location while you travel.",
+        "NSLocationAlwaysUsageDescription": "Atlas needs always-on location while you travel.",
+        "NSPhotoLibraryUsageDescription": "Atlas curates photos on-device. Photos never leave your phone.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B4D3E"
+      },
+      "package": "com.atlas.travel",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Atlas to use your location to build your travel journal.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Atlas scans photos on-device. Nothing is uploaded.",
+          "savePhotosPermission": "Allow Atlas to save journal exports.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
+    ]
+  }
 }

@@ -1,255 +1,149 @@
-/**
- * Trip Timeline Screen
- * Shows the chronological timeline of steps for a trip
- * Map at top, scrollable steps below
- */
+import React, {useCallback, useState} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import type {RootStackParamList} from '../../navigation/types';
+import type {Step} from '../../models';
+import {useApp} from '../../context/AppContext';
+import {COLORS, FONT_SIZES, SPACING, RADIUS} from '../../theme';
+import {formatDateTime} from '../../utils/helpers';
+import TripService from '../../services/TripService';
 
-import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, ScrollView, TouchableOpacity} from 'react-native';
-import {StackNavigationProp} from '@react-navigation/stack';
-import {RouteProp} from '@react-navigation/native';
-import {RootStackParamList} from '../../navigation/AppNavigator';
-import {Trip, Step} from '@models';
-import {TripService} from '@services';
-import {COLORS, FONT_SIZES, SPACING} from '@utils/constants';
-import {formatDate, formatTime} from '@utils/helpers';
+type Props = NativeStackScreenProps<RootStackParamList, 'TripTimeline'>;
 
-type TripTimelineScreenProps = {
-  navigation: StackNavigationProp<RootStackParamList, 'TripTimeline'>;
-  route: RouteProp<RootStackParamList, 'TripTimeline'>;
-};
-
-export const TripTimelineScreen: React.FC<TripTimelineScreenProps> = ({navigation, route}) => {
+export default function TripTimelineScreen({navigation, route}: Props) {
   const {tripId} = route.params;
-  const [trip, setTrip] = useState<Trip | null>(null);
+  const {getSteps, refreshJournal, completeTrip, addManualStep} = useApp();
   const [steps, setSteps] = useState<Step[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('Trip');
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    loadTrip();
-  }, [tripId]);
+  const load = useCallback(async () => {
+    const trip = await TripService.getTrip(tripId);
+    if (trip) setTitle(trip.name);
+    setSteps(await getSteps(tripId));
+  }, [getSteps, tripId]);
 
-  const loadTrip = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const onRefresh = async () => {
+    setBusy(true);
     try {
-      const tripData = await TripService.getTrip(tripId);
-      setTrip(tripData);
-
-      // TODO: Load steps from backend/storage
-      setSteps([]);
-    } catch (error) {
-      console.error('Error loading trip:', error);
+      setSteps(await refreshJournal(tripId));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  const handleCompleteTrip = async () => {
-    if (!trip) return;
-
-    try {
-      await TripService.completeTrip(trip.id);
-      navigation.goBack();
-    } catch (error) {
-      console.error('Error completing trip:', error);
-    }
+  const onAdd = async () => {
+    const step = await addManualStep(tripId, 'Custom stop', 'Added by hand');
+    setSteps(await getSteps(tripId));
+    navigation.navigate('StepEdit', {tripId, stepId: step.id});
   };
-
-  const handleAddStep = () => {
-    navigation.navigate('StepEdit', {tripId});
-  };
-
-  if (loading || !trip) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.tripName}>{trip.name}</Text>
-        {trip.status === 'active' && (
-          <TouchableOpacity onPress={handleCompleteTrip}>
-            <Text style={styles.completeButton}>Complete</Text>
-          </TouchableOpacity>
-        )}
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.meta}>{steps.length} steps</Text>
       </View>
-
-      {/* Map placeholder */}
-      <View style={styles.mapContainer}>
-        <Text style={styles.mapPlaceholder}>Trip Map (Mapbox integration pending)</Text>
-      </View>
-
-      {/* Timeline */}
-      <View style={styles.timelineContainer}>
-        <View style={styles.timelineHeader}>
-          <Text style={styles.timelineTitle}>Journey Timeline</Text>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddStep}>
-            <Text style={styles.addButtonText}>+ Add Step</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.stepsScroll} contentContainerStyle={styles.stepsContent}>
-          {steps.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No steps yet</Text>
-              <Text style={styles.emptySubtext}>
-                Your journey will automatically appear here as you travel
-              </Text>
-            </View>
-          ) : (
-            steps.map(step => (
-              <View key={step.id} style={styles.stepCard}>
-                <Text style={styles.stepType}>{step.type}</Text>
-                <Text style={styles.stepName}>{step.name}</Text>
-                <Text style={styles.stepTime}>{formatTime(step.startTime)}</Text>
-                {step.notes && <Text style={styles.stepNotes}>{step.notes}</Text>}
-                <Text style={styles.stepPhotos}>{step.photos.length} photos</Text>
+      <FlatList
+        data={steps}
+        keyExtractor={item => item.id}
+        refreshControl={<RefreshControl refreshing={busy} onRefresh={onRefresh} />}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            No steps yet. Pull to refresh after tracking, or add one manually.
+          </Text>
+        }
+        renderItem={({item}) => (
+          <Pressable
+            style={styles.card}
+            onPress={() => navigation.navigate('StepEdit', {tripId, stepId: item.id})}>
+            {item.photos[0]?.uri ? (
+              <Image source={{uri: item.photos[0].uri}} style={styles.photo} />
+            ) : (
+              <View style={[styles.photo, styles.photoPlaceholder]}>
+                <Text style={styles.placeholderText}>{item.type}</Text>
               </View>
-            ))
-          )}
-        </ScrollView>
+            )}
+            <View style={styles.cardBody}>
+              <Text style={styles.stepName}>{item.name}</Text>
+              <Text style={styles.stepMeta}>
+                {item.type} · {formatDateTime(item.startTime)}
+              </Text>
+              {item.notes ? <Text style={styles.notes} numberOfLines={2}>{item.notes}</Text> : null}
+            </View>
+          </Pressable>
+        )}
+      />
+      <View style={styles.actions}>
+        <Pressable style={styles.secondary} onPress={onAdd}>
+          <Text style={styles.secondaryText}>Add step</Text>
+        </Pressable>
+        <Pressable
+          style={styles.primary}
+          onPress={() => navigation.navigate('BookPreview', {tripId})}>
+          <Text style={styles.primaryText}>Preview book</Text>
+        </Pressable>
+        <Pressable
+          style={styles.accent}
+          onPress={async () => {
+            setBusy(true);
+            try {
+              await completeTrip(tripId);
+              await load();
+            } finally {
+              setBusy(false);
+            }
+          }}>
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Complete trip</Text>}
+        </Pressable>
       </View>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
+  container: {flex: 1, backgroundColor: COLORS.background},
+  header: {padding: SPACING.lg, paddingBottom: SPACING.sm},
+  title: {fontSize: FONT_SIZES.xxl, fontWeight: '700', color: COLORS.primary},
+  meta: {color: COLORS.textSecondary, marginTop: 4},
+  empty: {padding: SPACING.lg, color: COLORS.textSecondary},
+  card: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: SPACING.md,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
-  },
-  backButton: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.primary,
-  },
-  tripName: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  completeButton: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.success,
-    fontWeight: '600',
-  },
-  mapContainer: {
-    height: 250,
-    backgroundColor: COLORS.gray100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
-  },
-  mapPlaceholder: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-  },
-  timelineContainer: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  timelineHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
-  },
-  timelineTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: 6,
-  },
-  addButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-  },
-  stepsScroll: {
-    flex: 1,
-  },
-  stepsContent: {
-    padding: SPACING.md,
-  },
-  stepCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 8,
-    padding: SPACING.md,
+    marginHorizontal: SPACING.lg,
     marginBottom: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.gray200,
   },
-  stepType: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.primary,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: SPACING.xs,
-  },
-  stepName: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.xs,
-  },
-  stepTime: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.sm,
-  },
-  stepNotes: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textPrimary,
-    lineHeight: 20,
-    marginBottom: SPACING.sm,
-  },
-  stepPhotos: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textSecondary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: SPACING.xxl,
-  },
-  emptyText: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
-  },
-  emptySubtext: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-  },
-  loadingText: {
-    padding: SPACING.lg,
-    textAlign: 'center',
-    color: COLORS.textSecondary,
-  },
+  photo: {width: 88, height: 88},
+  photoPlaceholder: {backgroundColor: COLORS.parchment, alignItems: 'center', justifyContent: 'center'},
+  placeholderText: {color: COLORS.textSecondary, fontSize: FONT_SIZES.xs, textTransform: 'uppercase'},
+  cardBody: {flex: 1, padding: SPACING.md},
+  stepName: {fontSize: FONT_SIZES.md, fontWeight: '600', color: COLORS.textPrimary},
+  stepMeta: {color: COLORS.textSecondary, marginTop: 4, fontSize: FONT_SIZES.sm},
+  notes: {marginTop: 6, color: COLORS.textSecondary, fontSize: FONT_SIZES.sm},
+  actions: {padding: SPACING.lg, gap: SPACING.sm},
+  primary: {backgroundColor: COLORS.primary, padding: SPACING.md, borderRadius: RADIUS.lg, alignItems: 'center'},
+  secondary: {backgroundColor: COLORS.surface, padding: SPACING.md, borderRadius: RADIUS.lg, alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary},
+  accent: {backgroundColor: COLORS.accent, padding: SPACING.md, borderRadius: RADIUS.lg, alignItems: 'center'},
+  primaryText: {color: COLORS.textInverse, fontWeight: '600'},
+  secondaryText: {color: COLORS.primary, fontWeight: '600'},
 });
-
-export default TripTimelineScreen;

@@ -1,194 +1,164 @@
-/**
- * Home Screen - Main world map view
- * Shows scratch map of countries visited and list of trips
- */
+import React, {useState} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
+import type {BottomTabScreenProps} from '@react-navigation/bottom-tabs';
+import type {CompositeScreenProps} from '@react-navigation/native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import type {MainTabParamList, RootStackParamList} from '../../navigation/types';
+import {useApp} from '../../context/AppContext';
+import {COLORS, FONT_SIZES, SPACING, RADIUS} from '../../theme';
+import {formatDate} from '../../utils/helpers';
 
-import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, TouchableOpacity, FlatList} from 'react-native';
-import {StackNavigationProp} from '@react-navigation/stack';
-import {RootStackParamList} from '../../navigation/AppNavigator';
-import {Trip} from '@models';
-import {TripService} from '@services';
-import {COLORS, FONT_SIZES, SPACING} from '@utils/constants';
-import {formatDate} from '@utils/helpers';
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Home'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
 
-type HomeScreenProps = {
-  navigation: StackNavigationProp<RootStackParamList, 'Home'>;
-};
+export default function HomeScreen({navigation}: Props) {
+  const {trips, activeTrip, startTrip, runDemoTrip, completeTrip} = useApp();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({navigation}) => {
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadTrips();
-  }, []);
-
-  const loadTrips = async () => {
+  const onDemo = async () => {
+    setBusy(true);
+    setMessage('Simulating a Paris weekend…');
     try {
-      const allTrips = await TripService.getAllTrips();
-      setTrips(allTrips);
-    } catch (error) {
-      console.error('Error loading trips:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateTrip = async () => {
-    try {
-      const trip = await TripService.createTrip('New Trip', true);
+      const trip = await runDemoTrip();
+      setMessage('Demo trip ready');
       navigation.navigate('TripTimeline', {tripId: trip.id});
-    } catch (error) {
-      console.error('Error creating trip:', error);
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleTripPress = (trip: Trip) => {
-    navigation.navigate('TripTimeline', {tripId: trip.id});
+  const onStart = async () => {
+    setBusy(true);
+    try {
+      const trip = await startTrip(`Trip ${new Date().toLocaleDateString()}`);
+      navigation.navigate('TripTimeline', {tripId: trip.id});
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const renderTrip = ({item}: {item: Trip}) => (
-    <TouchableOpacity style={styles.tripCard} onPress={() => handleTripPress(item)}>
-      <View style={styles.tripInfo}>
-        <Text style={styles.tripName}>{item.name}</Text>
-        <Text style={styles.tripDate}>{formatDate(item.startDate)}</Text>
-        <Text style={styles.tripStatus}>{item.status}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const onComplete = async () => {
+    if (!activeTrip) return;
+    setBusy(true);
+    try {
+      await completeTrip(activeTrip.id);
+      setMessage('Trip completed & journal built');
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Map placeholder */}
-      <View style={styles.mapContainer}>
-        <Text style={styles.mapPlaceholder}>World Map (Mapbox integration pending)</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.brand}>Atlas</Text>
+      <Text style={styles.subtitle}>Your world, written for you</Text>
+
+      <View style={styles.mapCard}>
+        <Text style={styles.mapTitle}>
+          {Platform.OS === 'web' ? 'Demo map · Paris path' : 'Live map'}
+        </Text>
+        <Text style={styles.mapBody}>
+          {activeTrip
+            ? `Tracking: ${activeTrip.name}`
+            : trips.length
+              ? `${trips.length} trip${trips.length === 1 ? '' : 's'} in your journal`
+              : 'Start a trip or run the Paris demo to see Atlas work end-to-end.'}
+        </Text>
+        {trips.slice(0, 5).map(t => (
+          <Pressable
+            key={t.id}
+            style={styles.chip}
+            onPress={() => navigation.navigate('TripTimeline', {tripId: t.id})}>
+            <Text style={styles.chipText}>
+              {t.name} · {t.countries?.[0] || t.status} · {formatDate(t.startDate)}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
-      {/* Trips list */}
-      <View style={styles.listContainer}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>My Trips</Text>
-          <TouchableOpacity style={styles.createButton} onPress={handleCreateTrip}>
-            <Text style={styles.createButtonText}>+ New Trip</Text>
-          </TouchableOpacity>
-        </View>
+      {busy ? (
+        <ActivityIndicator color={COLORS.primary} style={{marginVertical: SPACING.md}} />
+      ) : null}
+      {message ? <Text style={styles.message}>{message}</Text> : null}
 
-        {loading ? (
-          <Text style={styles.loadingText}>Loading trips...</Text>
-        ) : trips.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No trips yet</Text>
-            <Text style={styles.emptySubtext}>Start your first journey</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={trips}
-            renderItem={renderTrip}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.listContent}
-          />
-        )}
-      </View>
-    </View>
+      <Pressable style={styles.primaryBtn} onPress={onDemo} disabled={busy}>
+        <Text style={styles.primaryText}>Run Paris demo trip</Text>
+      </Pressable>
+      <Pressable style={styles.secondaryBtn} onPress={onStart} disabled={busy}>
+        <Text style={styles.secondaryText}>Start live trip</Text>
+      </Pressable>
+      {activeTrip ? (
+        <Pressable style={styles.accentBtn} onPress={onComplete} disabled={busy}>
+          <Text style={styles.primaryText}>Complete & curate journal</Text>
+        </Pressable>
+      ) : null}
+    </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  mapContainer: {
-    height: '40%',
-    backgroundColor: COLORS.gray100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
-  },
-  mapPlaceholder: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
-  },
-  listContainer: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  container: {flex: 1, backgroundColor: COLORS.background},
+  content: {padding: SPACING.lg, paddingBottom: SPACING.xxl},
+  brand: {fontSize: FONT_SIZES.xxxl, fontWeight: '700', color: COLORS.primary},
+  subtitle: {fontSize: FONT_SIZES.md, color: COLORS.textSecondary, marginBottom: SPACING.lg},
+  mapCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
     padding: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray200,
-  },
-  headerTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.textPrimary,
-  },
-  createButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderRadius: 8,
-  },
-  createButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-  },
-  listContent: {
-    padding: SPACING.md,
-  },
-  tripCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.lg,
     borderWidth: 1,
     borderColor: COLORS.gray200,
   },
-  tripInfo: {
-    gap: SPACING.xs,
+  mapTitle: {fontSize: FONT_SIZES.lg, fontWeight: '600', color: COLORS.textPrimary},
+  mapBody: {marginTop: SPACING.sm, color: COLORS.textSecondary, lineHeight: 22},
+  chip: {
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.parchment,
+    borderRadius: RADIUS.md,
   },
-  tripName: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  tripDate: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-  },
-  tripStatus: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.primary,
-    fontWeight: '500',
-    textTransform: 'capitalize',
-  },
-  loadingText: {
-    padding: SPACING.lg,
-    textAlign: 'center',
-    color: COLORS.textSecondary,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
+  chipText: {color: COLORS.textPrimary, fontSize: FONT_SIZES.sm},
+  message: {color: COLORS.accent, marginBottom: SPACING.sm},
+  primaryBtn: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  emptyText: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
     marginBottom: SPACING.sm,
   },
-  emptySubtext: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
+  secondaryBtn: {
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
   },
+  accentBtn: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+  },
+  primaryText: {color: COLORS.textInverse, fontWeight: '600', fontSize: FONT_SIZES.md},
+  secondaryText: {color: COLORS.primary, fontWeight: '600', fontSize: FONT_SIZES.md},
 });
-
-export default HomeScreen;

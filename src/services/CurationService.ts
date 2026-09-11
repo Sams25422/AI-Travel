@@ -1,387 +1,265 @@
 /**
- * CurationService - Photo Curation & Intelligence Service
- *
- * Responsibilities:
- * - Scan photo library for new photos
- * - Run on-device ML models to filter junk
- * - Score photo quality
- * - Cluster photos by time and location
- * - Assign photos to trip steps
- *
- * PRIVACY: All processing happens ON-DEVICE. Photos are never uploaded.
- * Only metadata (native IDs, scores, timestamps) are synced.
- *
- * NOTE: This is a stub. Native photo library access and ML models required.
+ * CurationService — on-device heuristic photo curation
  */
+import * as MediaLibrary from 'expo-media-library';
+import {Platform} from 'react-native';
+import type {PhotoMetadata, PhotoCluster, Photo, Step, Trip, GeoPoint} from '../models';
+import {clusterStorage, stepStorage} from '../utils/storage';
+import {generateUUID, log, logError, calculateDistance} from '../utils/helpers';
+import {CURATION_CONFIG} from '../utils/constants';
+import PermissionService from './PermissionService';
+import JournalingService from './JournalingService';
 
-import {PhotoMetadata, PhotoCluster, GeoPoint, Trip, Step} from '@models';
-import {generateUUID, calculateDistance, log, logError} from '@utils/helpers';
-import {CURATION_CONFIG} from '@utils/constants';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface CurationResult {
-  photosProcessed: number;
-  photosAdded: number;
-  photosFiltered: number;
-  clustersCreated: number;
-}
-
-interface PhotoAnalysis {
-  nativeId: string;
-  isJunk: boolean;
-  junkScore: number;
-  qualityScore: number;
-  timestamp: Date;
-  location?: GeoPoint;
-  width: number;
-  height: number;
-}
-
-// ============================================================================
-// CurationService Class
-// ============================================================================
+const DEMO_PHOTOS = [
+  {
+    label: 'Louvre',
+    location: {latitude: 48.8606, longitude: 2.3376} as GeoPoint,
+    isJunk: false,
+    qualityScore: 0.92,
+    width: 3024,
+    height: 4032,
+    uri: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400',
+  },
+  {
+    label: 'Eiffel',
+    location: {latitude: 48.8584, longitude: 2.2945} as GeoPoint,
+    isJunk: false,
+    qualityScore: 0.95,
+    width: 3024,
+    height: 4032,
+    uri: 'https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=400',
+  },
+  {
+    label: 'Screenshot',
+    location: undefined as GeoPoint | undefined,
+    isJunk: true,
+    qualityScore: 0.1,
+    width: 1170,
+    height: 2532,
+    fileName: 'IMG_SCREENSHOT_001.png',
+    uri: undefined as string | undefined,
+  },
+  {
+    label: 'Sacré-Cœur',
+    location: {latitude: 48.8867, longitude: 2.3431} as GeoPoint,
+    isJunk: false,
+    qualityScore: 0.88,
+    width: 4032,
+    height: 3024,
+    uri: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400',
+  },
+  {
+    label: 'Blurry',
+    location: {latitude: 48.853, longitude: 2.3499} as GeoPoint,
+    isJunk: true,
+    qualityScore: 0.25,
+    width: 800,
+    height: 600,
+    fileName: 'IMG_blur.jpg',
+    uri: undefined as string | undefined,
+  },
+  {
+    label: 'Seine',
+    location: {latitude: 48.853, longitude: 2.3499} as GeoPoint,
+    isJunk: false,
+    qualityScore: 0.84,
+    width: 4032,
+    height: 3024,
+    uri: 'https://images.unsplash.com/photo-1509439581779-6298f75bf6e5?w=400',
+  },
+];
 
 class CurationService {
-  private isRunning: boolean = false;
-  private lastScanTimestamp: Date | null = null;
+  private running = false;
 
-  /**
-   * Initialize the curation service
-   */
   async initialize(): Promise<void> {
-    try {
-      log('CurationService: Initializing...');
-
-      // Check photo library permission
-      const hasPermission = await this.checkPhotoPermission();
-      if (!hasPermission) {
-        log('CurationService: Photo permission not granted');
-      }
-
-      log('CurationService: Initialized');
-    } catch (error) {
-      logError(error as Error, {context: 'CurationService.initialize'});
-    }
+    log('CurationService: Ready');
   }
 
-  /**
-   * Run curation for a specific trip
-   * Scans photo library, analyzes photos, and creates clusters
-   */
-  async curateTripPhotos(trip: Trip): Promise<CurationResult> {
-    if (this.isRunning) {
-      log('CurationService: Already running');
-      throw new Error('Curation already in progress');
-    }
-
+  async curateTrip(trip: Trip): Promise<{
+    processed: number;
+    kept: number;
+    filtered: number;
+    clusters: number;
+  }> {
+    if (this.running) throw new Error('Curation already running');
+    this.running = true;
     try {
-      this.isRunning = true;
-      log('CurationService: Starting curation for trip', trip.id);
+      const perm = await PermissionService.requestPhotoLibrary();
+      const useDemo = Platform.OS === 'web' || perm !== 'granted';
+      const photos = useDemo
+        ? this.buildDemoPhotos(trip)
+        : await this.scanLibrary(new Date(trip.startDate));
 
-      const result: CurationResult = {
-        photosProcessed: 0,
-        photosAdded: 0,
-        photosFiltered: 0,
-        clustersCreated: 0,
-      };
-
-      // 1. Get new photos since last scan
-      const newPhotos = await this.getNewPhotosSince(trip.startDate);
-      result.photosProcessed = newPhotos.length;
-
-      if (newPhotos.length === 0) {
-        log('CurationService: No new photos found');
-        return result;
-      }
-
-      // 2. Analyze each photo
-      const analyzedPhotos: PhotoAnalysis[] = [];
-      for (const photo of newPhotos) {
-        const analysis = await this.analyzePhoto(photo);
-        analyzedPhotos.push(analysis);
-      }
-
-      // 3. Filter out junk
-      const goodPhotos = analyzedPhotos.filter(
+      const analyzed = photos.map(p => this.score(p));
+      const kept = analyzed.filter(
         p => !p.isJunk && p.qualityScore >= CURATION_CONFIG.MIN_QUALITY_SCORE,
       );
-      result.photosFiltered = analyzedPhotos.length - goodPhotos.length;
-      result.photosAdded = goodPhotos.length;
+      const clusters = this.cluster(kept, trip.id);
+      await clusterStorage.saveForTrip(trip.id, clusters);
 
-      // 4. Create photo clusters
-      const clusters = this.clusterPhotos(goodPhotos, trip);
-      result.clustersCreated = clusters.length;
+      const steps = await stepStorage.getForTrip(trip.id);
+      for (const step of steps) {
+        const nearby = this.photosNearStep(kept, step);
+        const featured = this.selectFeatured(
+          nearby,
+          CURATION_CONFIG.FEATURED_PHOTOS_PER_STEP,
+        );
+        if (featured.length) {
+          await JournalingService.attachPhotos(
+            step.id,
+            featured.map((p, i) => this.toPhoto(p, i === 0)),
+          );
+        }
+      }
 
-      // 5. Save clusters (in production, would sync to backend)
-      // TODO: Implement cluster storage/sync
-
-      this.lastScanTimestamp = new Date();
-
-      log('CurationService: Curation complete', result);
-      return result;
+      return {
+        processed: analyzed.length,
+        kept: kept.length,
+        filtered: analyzed.length - kept.length,
+        clusters: clusters.length,
+      };
     } catch (error) {
-      logError(error as Error, {context: 'CurationService.curateTripPhotos'});
+      logError(error as Error, {context: 'CurationService.curateTrip'});
       throw error;
     } finally {
-      this.isRunning = false;
+      this.running = false;
     }
   }
 
-  /**
-   * Get the best photos for a specific step
-   */
-  async getPhotosForStep(step: Step, maxPhotos: number = 10): Promise<PhotoMetadata[]> {
-    try {
-      // TODO: In production, this would:
-      // 1. Query photo clusters near the step location
-      // 2. Filter by step time window
-      // 3. Sort by quality score
-      // 4. Return top N photos
-
-      log('CurationService: Getting photos for step', step.id);
-      return [];
-    } catch (error) {
-      logError(error as Error, {context: 'CurationService.getPhotosForStep'});
-      return [];
-    }
+  selectFeatured(photos: PhotoMetadata[], count = 3): PhotoMetadata[] {
+    return [...photos].sort((a, b) => b.qualityScore - a.qualityScore).slice(0, count);
   }
 
-  /**
-   * Select featured photos for a step
-   */
-  selectFeaturedPhotos(photos: PhotoMetadata[], count: number = 3): PhotoMetadata[] {
-    // Sort by quality score descending
-    const sorted = [...photos].sort((a, b) => b.qualityScore - a.qualityScore);
-
-    // Return top N
-    return sorted.slice(0, count);
-  }
-
-  /**
-   * Manually add a photo to a step (user override)
-   */
-  async addPhotoToStep(photoNativeId: string, stepId: string): Promise<void> {
-    try {
-      log('CurationService: Adding photo to step', {photoNativeId, stepId});
-
-      // TODO: Implement
-      // 1. Fetch photo metadata
-      // 2. Associate with step
-      // 3. Update backend
-    } catch (error) {
-      logError(error as Error, {context: 'CurationService.addPhotoToStep'});
-      throw error;
-    }
-  }
-
-  /**
-   * Remove a photo from a step
-   */
-  async removePhotoFromStep(photoNativeId: string, stepId: string): Promise<void> {
-    try {
-      log('CurationService: Removing photo from step', {photoNativeId, stepId});
-
-      // TODO: Implement
-      // 1. Remove association
-      // 2. Update backend
-    } catch (error) {
-      logError(error as Error, {context: 'CurationService.removePhotoFromStep'});
-      throw error;
-    }
-  }
-
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
-
-  /**
-   * Get new photos from library since a specific date
-   *
-   * TODO: Implement with native photo library APIs
-   * - iOS: PHAsset / PHPhotoLibrary
-   * - Android: MediaStore
-   */
-  private async getNewPhotosSince(since: Date): Promise<string[]> {
-    // Mock implementation
-    log('CurationService: Fetching photos since', since.toISOString());
-
-    // In production:
-    // 1. Query PHAsset (iOS) or MediaStore (Android)
-    // 2. Filter by creation date >= since
-    // 3. Return native photo IDs
-
-    return [];
-  }
-
-  /**
-   * Analyze a single photo
-   *
-   * TODO: Implement with on-device ML models
-   * - iOS: CoreML
-   * - Android: TensorFlow Lite
-   */
-  private async analyzePhoto(photoNativeId: string): Promise<PhotoAnalysis> {
-    // Mock implementation
-    log('CurationService: Analyzing photo', photoNativeId);
-
-    // In production:
-    // 1. Load photo from native library
-    // 2. Extract EXIF data (timestamp, location)
-    // 3. Run through ML models:
-    //    - Junk classifier (screenshot, receipt, blurry)
-    //    - Quality scorer (composition, lighting)
-    // 4. Return analysis
-
-    return {
-      nativeId: photoNativeId,
-      isJunk: false,
-      junkScore: 0.1,
-      qualityScore: 0.85,
-      timestamp: new Date(),
-      location: undefined,
-      width: 1920,
-      height: 1080,
-    };
-  }
-
-  /**
-   * Run junk detection model
-   *
-   * TODO: Implement with ML model
-   * Model should detect: screenshots, receipts, blurry photos, dark photos
-   */
-  private async detectJunk(photoData: any): Promise<{isJunk: boolean; score: number}> {
-    // Mock implementation
-    // In production: Run CoreML/TFLite model
-    return {
-      isJunk: false,
-      score: 0.1,
-    };
-  }
-
-  /**
-   * Run quality scoring model
-   *
-   * TODO: Implement with ML model
-   * Model should score: composition, lighting, focus, subject
-   */
-  private async scoreQuality(photoData: any): Promise<number> {
-    // Mock implementation
-    // In production: Run CoreML/TFLite model
-    return 0.85;
-  }
-
-  /**
-   * Cluster photos by time and location
-   */
-  private clusterPhotos(photos: PhotoAnalysis[], trip: Trip): PhotoCluster[] {
-    const clusters: PhotoCluster[] = [];
-
-    if (photos.length === 0) {
-      return clusters;
-    }
-
-    // Sort by timestamp
-    const sorted = [...photos].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-    let currentCluster: PhotoAnalysis[] = [sorted[0]];
-
-    for (let i = 1; i < sorted.length; i++) {
-      const photo = sorted[i];
-      const lastPhoto = currentCluster[currentCluster.length - 1];
-
-      // Check if photo belongs to current cluster
-      const timeDiff = photo.timestamp.getTime() - lastPhoto.timestamp.getTime();
-      const withinTimeWindow = timeDiff <= CURATION_CONFIG.TIME_CLUSTER_WINDOW;
-
-      let withinLocationRadius = true;
-      if (photo.location && lastPhoto.location) {
-        const distance = calculateDistance(photo.location, lastPhoto.location);
-        withinLocationRadius = distance <= CURATION_CONFIG.LOCATION_CLUSTER_RADIUS;
-      }
-
-      if (withinTimeWindow && withinLocationRadius) {
-        // Add to current cluster
-        currentCluster.push(photo);
-      } else {
-        // Finalize current cluster and start new one
-        if (currentCluster.length > 0) {
-          clusters.push(this.finalizeCluster(currentCluster, trip.id));
-        }
-        currentCluster = [photo];
-      }
-    }
-
-    // Finalize last cluster
-    if (currentCluster.length > 0) {
-      clusters.push(this.finalizeCluster(currentCluster, trip.id));
-    }
-
-    return clusters;
-  }
-
-  /**
-   * Convert a group of photos into a PhotoCluster
-   */
-  private finalizeCluster(photos: PhotoAnalysis[], tripId: string): PhotoCluster {
-    const startTime = photos[0].timestamp;
-    const endTime = photos[photos.length - 1].timestamp;
-
-    // Calculate center location (average of all photo locations)
-    const photosWithLocation = photos.filter(p => p.location);
-    let centerLocation: GeoPoint;
-
-    if (photosWithLocation.length > 0) {
-      const avgLat =
-        photosWithLocation.reduce((sum, p) => sum + p.location!.latitude, 0) /
-        photosWithLocation.length;
-      const avgLng =
-        photosWithLocation.reduce((sum, p) => sum + p.location!.longitude, 0) /
-        photosWithLocation.length;
-      centerLocation = {latitude: avgLat, longitude: avgLng};
-    } else {
-      // Default location if no photos have geotags
-      centerLocation = {latitude: 0, longitude: 0};
-    }
-
-    const metadata: PhotoMetadata[] = photos.map(p => ({
-      nativeId: p.nativeId,
-      timestamp: p.timestamp,
+  private buildDemoPhotos(trip: Trip): PhotoMetadata[] {
+    const start = +new Date(trip.startDate);
+    return DEMO_PHOTOS.map((p, i) => ({
+      nativeId: `demo_${i}`,
+      uri: p.uri,
+      timestamp: new Date(start + i * 35 * 60 * 1000).toISOString(),
       location: p.location,
       isJunk: p.isJunk,
       qualityScore: p.qualityScore,
       width: p.width,
       height: p.height,
-      fileName: undefined,
+      fileName: (p as {fileName?: string}).fileName || `${p.label}.jpg`,
+      mediaType: 'photo',
     }));
+  }
 
+  private async scanLibrary(since: Date): Promise<PhotoMetadata[]> {
+    const page = await MediaLibrary.getAssetsAsync({
+      first: 100,
+      mediaType: MediaLibrary.MediaType.photo,
+      createdAfter: since.getTime(),
+      sortBy: [MediaLibrary.SortBy.creationTime],
+    });
+
+    return page.assets.map(asset => ({
+      nativeId: asset.id,
+      uri: asset.uri,
+      timestamp: new Date(asset.creationTime).toISOString(),
+      // Location requires getAssetInfoAsync; demo/heuristic path works without it.
+      location: undefined,
+      isJunk: false,
+      qualityScore: 0.7,
+      width: asset.width,
+      height: asset.height,
+      fileName: asset.filename,
+      mediaType: 'photo',
+    }));
+  }
+
+  private score(photo: PhotoMetadata): PhotoMetadata {
+    let junkScore = 0;
+    const name = (photo.fileName || '').toLowerCase();
+    if (name.includes('screenshot') || name.includes('screen_shot')) junkScore += 0.9;
+    if (name.includes('receipt') || name.includes('blur')) junkScore += 0.8;
+    if (photo.width < 640 || photo.height < 640) junkScore += 0.35;
+    const aspect = photo.width / Math.max(photo.height, 1);
+    if (aspect > 2.2 || aspect < 0.35) junkScore += 0.25;
+
+    let quality = photo.qualityScore || 0.7;
+    const mp = (photo.width * photo.height) / 1_000_000;
+    if (mp >= 8) quality += 0.1;
+    if (mp < 1) quality -= 0.25;
+    if (photo.location) quality += 0.05;
+    quality = Math.max(0, Math.min(1, quality));
+
+    const isJunk = junkScore >= CURATION_CONFIG.JUNK_THRESHOLD || photo.isJunk;
+    return {...photo, isJunk, qualityScore: isJunk ? Math.min(quality, 0.3) : quality};
+  }
+
+  private cluster(photos: PhotoMetadata[], tripId: string): PhotoCluster[] {
+    if (!photos.length) return [];
+    const sorted = [...photos].sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp));
+    const clusters: PhotoCluster[] = [];
+    let bucket: PhotoMetadata[] = [sorted[0]];
+
+    const flush = () => {
+      if (!bucket.length) return;
+      const withLoc = bucket.filter(p => p.location);
+      const centerLocation: GeoPoint = withLoc.length
+        ? {
+            latitude: withLoc.reduce((s, p) => s + p.location!.latitude, 0) / withLoc.length,
+            longitude: withLoc.reduce((s, p) => s + p.location!.longitude, 0) / withLoc.length,
+          }
+        : {latitude: 0, longitude: 0};
+      clusters.push({
+        id: generateUUID(),
+        tripId,
+        photos: [...bucket],
+        centerLocation,
+        startTime: bucket[0].timestamp,
+        endTime: bucket[bucket.length - 1].timestamp,
+      });
+    };
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = bucket[bucket.length - 1];
+      const curr = sorted[i];
+      const dt = +new Date(curr.timestamp) - +new Date(prev.timestamp);
+      let near = true;
+      if (prev.location && curr.location) {
+        near =
+          calculateDistance(prev.location, curr.location) <=
+          CURATION_CONFIG.LOCATION_CLUSTER_RADIUS;
+      }
+      if (dt <= CURATION_CONFIG.TIME_CLUSTER_WINDOW && near) bucket.push(curr);
+      else {
+        flush();
+        bucket = [curr];
+      }
+    }
+    flush();
+    return clusters;
+  }
+
+  private photosNearStep(photos: PhotoMetadata[], step: Step): PhotoMetadata[] {
+    const start = +new Date(step.startTime) - 45 * 60 * 1000;
+    const end = +new Date(step.endTime || step.startTime) + 45 * 60 * 1000;
+    return photos.filter(p => {
+      const t = +new Date(p.timestamp);
+      if (t >= start && t <= end) {
+        if (!p.location) return true;
+        return calculateDistance(p.location, step.location) <= 500;
+      }
+      if (p.location && calculateDistance(p.location, step.location) <= 400) return true;
+      return false;
+    });
+  }
+
+  private toPhoto(meta: PhotoMetadata, featured: boolean): Photo {
     return {
-      id: generateUUID(),
-      tripId,
-      photos: metadata,
-      centerLocation,
-      startTime,
-      endTime,
-      assignedStepId: undefined,
+      nativeId: meta.nativeId,
+      uri: meta.uri,
+      qualityScore: meta.qualityScore,
+      isFeatured: featured && meta.qualityScore >= CURATION_CONFIG.FEATURED_QUALITY_THRESHOLD,
+      timestamp: meta.timestamp,
+      location: meta.location,
+      isJunk: meta.isJunk,
     };
   }
-
-  /**
-   * Check if photo library permission is granted
-   *
-   * TODO: Implement with native permission APIs
-   */
-  private async checkPhotoPermission(): Promise<boolean> {
-    // Mock implementation
-    return true;
-  }
 }
-
-// ============================================================================
-// Export Singleton Instance
-// ============================================================================
 
 export default new CurationService();

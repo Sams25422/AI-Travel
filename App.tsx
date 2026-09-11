@@ -1,56 +1,30 @@
-/**
- * Atlas - Automated Travel Journal
- * Main App Entry Point
- */
-
-import React, {useEffect} from 'react';
-import {StatusBar, SafeAreaView, StyleSheet} from 'react-native';
+import React from 'react';
+import {Platform, StyleSheet} from 'react-native';
+import {StatusBar} from 'expo-status-bar';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {enableScreens} from 'react-native-screens';
+import {AppProvider} from './src/context/AppContext';
 import AppNavigator from './src/navigation/AppNavigator';
-import {TrackerService, CurationService, PermissionService} from './src/services';
-import {COLORS} from './src/utils/constants';
-import {log} from './src/utils/helpers';
 
-const App: React.FC = () => {
-  useEffect(() => {
-    initializeApp();
-  }, []);
+// react-native-screens can swallow clicks on web
+if (Platform.OS === 'web') {
+  enableScreens(false);
+}
 
-  const initializeApp = async () => {
-    try {
-      log('App: Initializing Atlas...');
-
-      // Initialize services
-      await Promise.all([
-        TrackerService.initialize(),
-        CurationService.initialize(),
-        PermissionService.checkAllPermissions(),
-      ]);
-
-      log('App: Initialization complete');
-    } catch (error) {
-      console.error('App: Initialization error:', error);
-    }
-  };
-
+export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-        <AppNavigator />
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <AppProvider>
+          <StatusBar style="dark" />
+          <AppNavigator />
+        </AppProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  root: {flex: 1},
 });
-
-export default App;
