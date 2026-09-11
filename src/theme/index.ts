@@ -30,10 +30,15 @@ export const COLORS = {
   error: '#B33A3A',
   info: '#3A6EA5',
 
-  background: '#F7F3EC',
-  backgroundSecondary: '#EFE8DC',
+  background: '#F4F0E8',
+  backgroundSecondary: '#E8E1D4',
   surface: '#FFFFFF',
   overlay: 'rgba(11, 15, 14, 0.45)',
+
+  /** Discover atmosphere — deep forest, not flat cream */
+  hero: '#0F2F26',
+  heroSoft: '#1B4D3E',
+  gold: '#D4A017',
 
   textPrimary: '#141210',
   textSecondary: '#6F675A',

@@ -23,7 +23,7 @@ class TripService {
       ownerUid: LOCAL_USER_ID,
       name,
       startDate: nowISO(),
-      status: startNow ? 'active' : 'completed',
+      status: startNow ? 'active' : 'planned',
       countries: [],
       totalSteps: 0,
       createdAt: nowISO(),

@@ -12,6 +12,7 @@ import type {
   BookOrder,
   PhotoCluster,
   AppPermissions,
+  ItineraryItem,
 } from '../models';
 
 export const STORAGE_KEYS = {
@@ -21,6 +22,7 @@ export const STORAGE_KEYS = {
   TRACKER_CONFIG: '@atlas/tracker_config',
   TRIPS: '@atlas/trips',
   STEPS: '@atlas/steps',
+  ITINERARY: '@atlas/itinerary',
   PENDING_LOCATIONS: '@atlas/pending_locations',
   PHOTO_CLUSTERS: '@atlas/photo_clusters',
   ORDERS: '@atlas/orders',
@@ -66,6 +68,10 @@ export const tripStorage = {
       STORAGE_KEYS.STEPS,
       (await stepStorage.getAll()).filter(s => s.tripId !== tripId),
     );
+    await storage.set(
+      STORAGE_KEYS.ITINERARY,
+      (await itineraryStorage.getAll()).filter(i => i.tripId !== tripId),
+    );
   },
   async getActiveTripId(): Promise<string | null> {
     return storage.get<string>(STORAGE_KEYS.ACTIVE_TRIP_ID);
@@ -73,6 +79,37 @@ export const tripStorage = {
   async setActiveTripId(tripId: string | null): Promise<void> {
     if (tripId) await storage.set(STORAGE_KEYS.ACTIVE_TRIP_ID, tripId);
     else await storage.remove(STORAGE_KEYS.ACTIVE_TRIP_ID);
+  },
+};
+
+export const itineraryStorage = {
+  async getAll(): Promise<ItineraryItem[]> {
+    return (await storage.get<ItineraryItem[]>(STORAGE_KEYS.ITINERARY)) || [];
+  },
+  async getForTrip(tripId: string): Promise<ItineraryItem[]> {
+    return (await this.getAll())
+      .filter(i => i.tripId === tripId)
+      .sort((a, b) => a.dayIndex - b.dayIndex || a.sortOrder - b.sortOrder || +new Date(a.startTime) - +new Date(b.startTime));
+  },
+  async get(id: string): Promise<ItineraryItem | null> {
+    return (await this.getAll()).find(i => i.id === id) || null;
+  },
+  async save(item: ItineraryItem): Promise<void> {
+    const items = await this.getAll();
+    const i = items.findIndex(x => x.id === item.id);
+    if (i >= 0) items[i] = item;
+    else items.push(item);
+    await storage.set(STORAGE_KEYS.ITINERARY, items);
+  },
+  async replaceForTrip(tripId: string, items: ItineraryItem[]): Promise<void> {
+    const others = (await this.getAll()).filter(i => i.tripId !== tripId);
+    await storage.set(STORAGE_KEYS.ITINERARY, [...others, ...items]);
+  },
+  async remove(id: string): Promise<void> {
+    await storage.set(
+      STORAGE_KEYS.ITINERARY,
+      (await this.getAll()).filter(i => i.id !== id),
+    );
   },
 };
 

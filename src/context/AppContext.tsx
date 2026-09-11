@@ -1,5 +1,5 @@
 /**
- * AppContext — global trip / onboarding state
+ * AppContext — global trip / planning / onboarding state
  */
 import React, {
   createContext,
@@ -9,7 +9,15 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import type {Trip, Step, AppPermissions, UserSettings} from '../models';
+import type {
+  Trip,
+  Step,
+  AppPermissions,
+  UserSettings,
+  ItineraryItem,
+  BudgetLevel,
+  TripStyle,
+} from '../models';
 import {settingsStorage} from '../utils/storage';
 import {LOCAL_USER_ID} from '../utils/constants';
 import {log, logError} from '../utils/helpers';
@@ -17,6 +25,7 @@ import {
   PermissionService,
   TrackerService,
   TripService,
+  PlanService,
   JournalingService,
   CurationService,
 } from '../services';
@@ -41,6 +50,24 @@ interface AppContextValue {
   getSteps: (tripId: string) => Promise<Step[]>;
   addManualStep: (tripId: string, name: string, notes?: string) => Promise<Step>;
   refreshJournal: (tripId: string) => Promise<Step[]>;
+  createPlan: (input: {
+    destinationId?: string;
+    name?: string;
+    nights?: number;
+    startDate?: string;
+    budgetLevel?: BudgetLevel;
+    tripStyle?: TripStyle;
+    planNotes?: string;
+  }) => Promise<Trip>;
+  getItinerary: (tripId: string) => Promise<ItineraryItem[]>;
+  addItineraryItem: (input: {
+    tripId: string;
+    title: string;
+    dayIndex: number;
+    notes?: string;
+  }) => Promise<ItineraryItem>;
+  removeItineraryItem: (id: string) => Promise<void>;
+  startPlannedTrip: (tripId: string) => Promise<Trip>;
 }
 
 const defaultPermissions: AppPermissions = {
@@ -58,7 +85,7 @@ const defaultSettings: UserSettings = {
   preferredUnits: 'metric',
   language: 'en',
   demoMode: true,
-}; // matches UserSettings in models
+};
 
 const AppContext = createContext<AppContextValue | null>(null);
 
@@ -200,6 +227,51 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
     [refreshTrips],
   );
 
+  const createPlan = useCallback(
+    async (input: {
+      destinationId?: string;
+      name?: string;
+      nights?: number;
+      startDate?: string;
+      budgetLevel?: BudgetLevel;
+      tripStyle?: TripStyle;
+      planNotes?: string;
+    }) => {
+      const trip = await PlanService.createPlan(input);
+      await refreshTrips();
+      return trip;
+    },
+    [refreshTrips],
+  );
+
+  const getItinerary = useCallback(
+    async (tripId: string) => PlanService.getItinerary(tripId),
+    [],
+  );
+
+  const addItineraryItem = useCallback(
+    async (input: {
+      tripId: string;
+      title: string;
+      dayIndex: number;
+      notes?: string;
+    }) => PlanService.addItem(input),
+    [],
+  );
+
+  const removeItineraryItem = useCallback(async (id: string) => {
+    await PlanService.removeItem(id);
+  }, []);
+
+  const startPlannedTrip = useCallback(
+    async (tripId: string) => {
+      const trip = await PlanService.startPlannedTrip(tripId);
+      await refreshTrips();
+      return trip;
+    },
+    [refreshTrips],
+  );
+
   const value = useMemo(
     () => ({
       ready,
@@ -221,6 +293,11 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
       getSteps,
       addManualStep,
       refreshJournal,
+      createPlan,
+      getItinerary,
+      addItineraryItem,
+      removeItineraryItem,
+      startPlannedTrip,
     }),
     [
       ready,
@@ -242,6 +319,11 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
       getSteps,
       addManualStep,
       refreshJournal,
+      createPlan,
+      getItinerary,
+      addItineraryItem,
+      removeItineraryItem,
+      startPlannedTrip,
     ],
   );
 

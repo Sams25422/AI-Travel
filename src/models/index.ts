@@ -9,21 +9,18 @@ export interface User {
   createdAt: string;
 }
 
-export type TripStatus = 'active' | 'completed' | 'paused';
+export type TripStatus = 'planned' | 'active' | 'completed' | 'paused';
 
-export interface Trip {
-  id: string;
-  ownerUid: string;
-  name: string;
-  startDate: string;
-  endDate?: string;
-  status: TripStatus;
-  coverPhotoUri?: string;
-  countries: string[];
-  totalSteps: number;
-  createdAt: string;
-  updatedAt: string;
-}
+export type TripStyle = 'vacation' | 'work' | 'adventure' | 'culture' | 'food';
+export type BudgetLevel = 'low' | 'mid' | 'high';
+
+export type ItineraryItemType =
+  | 'flight'
+  | 'visit'
+  | 'transit'
+  | 'stay'
+  | 'dining'
+  | 'note';
 
 export type StepType = 'flight' | 'visit' | 'transit' | 'stay' | 'dining';
 
@@ -38,6 +35,44 @@ export type ActivityType =
 export interface GeoPoint {
   latitude: number;
   longitude: number;
+}
+
+export interface ItineraryItem {
+  id: string;
+  tripId: string;
+  dayIndex: number;
+  title: string;
+  type: ItineraryItemType;
+  startTime: string;
+  endTime?: string;
+  notes: string;
+  location?: GeoPoint;
+  placeName?: string;
+  isConfirmed: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Trip {
+  id: string;
+  ownerUid: string;
+  name: string;
+  startDate: string;
+  endDate?: string;
+  status: TripStatus;
+  coverPhotoUri?: string;
+  countries: string[];
+  totalSteps: number;
+  /** Planning fields */
+  destinationId?: string;
+  destinationName?: string;
+  plannedNights?: number;
+  budgetLevel?: BudgetLevel;
+  tripStyle?: TripStyle;
+  planNotes?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Photo {

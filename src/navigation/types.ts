@@ -14,6 +14,9 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
+  DestinationDetail: {destinationId: string};
+  PlanTrip: {destinationId?: string; nights?: number; askQuery?: string};
+  Itinerary: {tripId: string};
   TripTimeline: {tripId: string};
   StepEdit: {tripId: string; stepId?: string};
   BookPreview: {tripId: string};

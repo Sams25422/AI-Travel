@@ -14,6 +14,9 @@ import OnboardingDoneScreen from '../screens/Onboarding/OnboardingDoneScreen';
 import HomeScreen from '../screens/Home/HomeScreen';
 import TripListScreen from '../screens/Home/TripListScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
+import DestinationDetailScreen from '../screens/Plan/DestinationDetailScreen';
+import PlanTripScreen from '../screens/Plan/PlanTripScreen';
+import ItineraryScreen from '../screens/Plan/ItineraryScreen';
 import TripTimelineScreen from '../screens/Trip/TripTimelineScreen';
 import StepEditScreen from '../screens/Trip/StepEditScreen';
 import BookPreviewScreen from '../screens/Book/BookPreviewScreen';
@@ -44,7 +47,7 @@ function MainTabs() {
         tabBarInactiveTintColor: COLORS.gray400,
         tabBarStyle: {backgroundColor: COLORS.surface, borderTopColor: COLORS.gray200},
       }}>
-      <Tab.Screen name="Home" component={HomeScreen} options={{title: 'Map'}} />
+      <Tab.Screen name="Home" component={HomeScreen} options={{title: 'Discover'}} />
       <Tab.Screen name="Trips" component={TripListScreen} options={{title: 'Trips'}} />
       <Tab.Screen name="Settings" component={SettingsScreen} options={{title: 'Settings'}} />
     </Tab.Navigator>
@@ -70,6 +73,21 @@ export default function AppNavigator() {
         ) : (
           <>
             <RootStack.Screen name="Main" component={MainTabs} options={{headerShown: false}} />
+            <RootStack.Screen
+              name="DestinationDetail"
+              component={DestinationDetailScreen}
+              options={{title: 'Destination', headerTintColor: COLORS.primary}}
+            />
+            <RootStack.Screen
+              name="PlanTrip"
+              component={PlanTripScreen}
+              options={{title: 'Plan trip', headerTintColor: COLORS.primary}}
+            />
+            <RootStack.Screen
+              name="Itinerary"
+              component={ItineraryScreen}
+              options={{title: 'Itinerary', headerTintColor: COLORS.primary}}
+            />
             <RootStack.Screen
               name="TripTimeline"
               component={TripTimelineScreen}
