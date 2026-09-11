@@ -1,24 +1,21 @@
-/**
- * Main Tab Navigator
- * Bottom tab navigation for main app screens
- */
-
 import React from 'react';
+import {Text} from 'react-native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
-import {SCREEN_NAMES, COLORS} from '@utils/constants';
-
-export type MainTabParamList = {
-  Home: undefined;
-  TripList: undefined;
-  Settings: undefined;
-};
+import {COLORS} from '../theme';
+import type {MainTabParamList} from './types';
+import HomeScreen from '../screens/Home/HomeScreen';
+import TripListScreen from '../screens/Home/TripListScreen';
+import SettingsScreen from '../screens/Settings/SettingsScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-/**
- * Main Tab Navigator Component
- */
-export const MainTabNavigator: React.FC = () => {
+function TabIcon({label, focused}: {label: string; focused: boolean}) {
+  return (
+    <Text style={{fontSize: 16, opacity: focused ? 1 : 0.45}}>{label}</Text>
+  );
+}
+
+export default function MainTabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -26,42 +23,34 @@ export const MainTabNavigator: React.FC = () => {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray400,
         tabBarStyle: {
-          backgroundColor: COLORS.white,
+          backgroundColor: COLORS.surface,
           borderTopColor: COLORS.gray200,
-          borderTopWidth: 1,
         },
       }}>
       <Tab.Screen
         name="Home"
-        component={PlaceholderScreen}
+        component={HomeScreen}
         options={{
           tabBarLabel: 'Map',
-          // TODO: Add icon
+          tabBarIcon: ({focused}) => <TabIcon label="🗺️" focused={focused} />,
         }}
       />
       <Tab.Screen
-        name="TripList"
-        component={PlaceholderScreen}
+        name="Trips"
+        component={TripListScreen}
         options={{
           tabBarLabel: 'Trips',
-          // TODO: Add icon
+          tabBarIcon: ({focused}) => <TabIcon label="📓" focused={focused} />,
         }}
       />
       <Tab.Screen
         name="Settings"
-        component={PlaceholderScreen}
+        component={SettingsScreen}
         options={{
           tabBarLabel: 'Settings',
-          // TODO: Add icon
+          tabBarIcon: ({focused}) => <TabIcon label="⚙️" focused={focused} />,
         }}
       />
     </Tab.Navigator>
   );
-};
-
-// Placeholder component
-const PlaceholderScreen: React.FC = () => {
-  return null;
-};
-
-export default MainTabNavigator;
+}

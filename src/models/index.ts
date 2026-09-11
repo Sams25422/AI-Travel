@@ -1,42 +1,26 @@
 /**
- * Core Data Models for Atlas
- * Based on the Technical Blueprint
+ * Core data models for Atlas
  */
-
-// ============================================================================
-// User Models
-// ============================================================================
 
 export interface User {
   id: string;
-  email: string;
+  email?: string;
   name: string;
-  createdAt: Date;
+  createdAt: string;
 }
 
-// ============================================================================
-// Trip Models
-// ============================================================================
+export type TripStatus = 'planned' | 'active' | 'completed' | 'paused';
 
-export type TripStatus = 'active' | 'completed' | 'paused';
+export type TripStyle = 'vacation' | 'work' | 'adventure' | 'culture' | 'food';
+export type BudgetLevel = 'low' | 'mid' | 'high';
 
-export interface Trip {
-  id: string;
-  ownerUid: string;
-  name: string;
-  startDate: Date;
-  endDate?: Date;
-  status: TripStatus;
-  coverPhotoUrl?: string;
-  countries?: string[];
-  totalSteps?: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-// ============================================================================
-// Step Models
-// ============================================================================
+export type ItineraryItemType =
+  | 'flight'
+  | 'visit'
+  | 'transit'
+  | 'stay'
+  | 'dining'
+  | 'note';
 
 export type StepType = 'flight' | 'visit' | 'transit' | 'stay' | 'dining';
 
@@ -53,13 +37,52 @@ export interface GeoPoint {
   longitude: number;
 }
 
-export interface Photo {
-  nativeId: string;        // Local device photo ID (iOS: PHAsset, Android: MediaStore)
-  qualityScore: number;    // 0.0 - 1.0
-  isFeatured: boolean;     // Is this a "hero" photo for the step?
-  timestamp: Date;
+export interface ItineraryItem {
+  id: string;
+  tripId: string;
+  dayIndex: number;
+  title: string;
+  type: ItineraryItemType;
+  startTime: string;
+  endTime?: string;
+  notes: string;
   location?: GeoPoint;
-  isJunk?: boolean;        // Marked as screenshot/receipt/blurry
+  placeName?: string;
+  isConfirmed: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Trip {
+  id: string;
+  ownerUid: string;
+  name: string;
+  startDate: string;
+  endDate?: string;
+  status: TripStatus;
+  coverPhotoUri?: string;
+  countries: string[];
+  totalSteps: number;
+  /** Planning fields */
+  destinationId?: string;
+  destinationName?: string;
+  plannedNights?: number;
+  budgetLevel?: BudgetLevel;
+  tripStyle?: TripStyle;
+  planNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Photo {
+  nativeId: string;
+  uri?: string;
+  qualityScore: number;
+  isFeatured: boolean;
+  timestamp: string;
+  location?: GeoPoint;
+  isJunk?: boolean;
 }
 
 export interface Step {
@@ -68,48 +91,42 @@ export interface Step {
   type: StepType;
   name: string;
   address?: string;
-  startTime: Date;
-  endTime?: Date;
-  notes: string;           // User's journal entry
+  startTime: string;
+  endTime?: string;
+  notes: string;
   location: GeoPoint;
   photos: Photo[];
-  isManuallyAdded: boolean;  // Did user add this manually?
-  createdAt: Date;
-  updatedAt: Date;
+  isManuallyAdded: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
-
-// ============================================================================
-// Location Tracking Models
-// ============================================================================
 
 export interface RawLocation {
   id: string;
   ownerUid: string;
   tripId: string;
   location: GeoPoint;
-  timestamp: Date;
-  accuracy?: number;       // meters
-  altitude?: number;       // meters
-  speed?: number;          // m/s
-  heading?: number;        // degrees
+  timestamp: string;
+  accuracy?: number;
+  altitude?: number;
+  speed?: number;
+  heading?: number;
   activity: ActivityType;
-  batteryLevel?: number;   // 0.0 - 1.0
-  isProcessed: boolean;    // Has this been turned into a Step?
+  batteryLevel?: number;
+  isProcessed: boolean;
 }
-
-// ============================================================================
-// Photo Analysis Models
-// ============================================================================
 
 export interface PhotoMetadata {
   nativeId: string;
-  timestamp: Date;
+  uri?: string;
+  timestamp: string;
   location?: GeoPoint;
   isJunk: boolean;
   qualityScore: number;
   width: number;
   height: number;
   fileName?: string;
+  mediaType?: string;
 }
 
 export interface PhotoCluster {
@@ -117,18 +134,15 @@ export interface PhotoCluster {
   tripId: string;
   photos: PhotoMetadata[];
   centerLocation: GeoPoint;
-  startTime: Date;
-  endTime: Date;
+  startTime: string;
+  endTime: string;
   assignedStepId?: string;
 }
-
-// ============================================================================
-// Book Order Models
-// ============================================================================
 
 export type BookType = 'hardcover' | 'softcover';
 export type BookSize = '8x10' | '11x14';
 export type OrderStatus =
+  | 'draft'
   | 'pending'
   | 'processing'
   | 'printing'
@@ -153,18 +167,13 @@ export interface BookOrder {
   bookType: BookType;
   bookSize: BookSize;
   pageCount: number;
-  price: number;           // in cents
+  price: number;
   shippingAddress: ShippingAddress;
   status: OrderStatus;
-  pdfUrl?: string;
-  trackingNumber?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  pdfUri?: string;
+  createdAt: string;
+  updatedAt: string;
 }
-
-// ============================================================================
-// App State / Settings Models
-// ============================================================================
 
 export interface AppPermissions {
   locationAlways: boolean;
@@ -175,36 +184,22 @@ export interface AppPermissions {
 
 export interface UserSettings {
   userId: string;
-  autoStartTrips: boolean;          // Auto-detect when a trip starts?
+  autoStartTrips: boolean;
   batteryOptimizationEnabled: boolean;
-  privacyMode: boolean;              // Extra privacy features
+  privacyMode: boolean;
   preferredUnits: 'metric' | 'imperial';
   language: string;
+  demoMode: boolean;
 }
-
-// ============================================================================
-// Service Configuration Models
-// ============================================================================
 
 export interface TrackerConfig {
   isActive: boolean;
   currentTripId?: string;
-  updateInterval: number;            // milliseconds
-  distanceFilter: number;            // meters
-  stationaryRadius: number;          // meters
-  stopTimeout: number;               // milliseconds
+  updateInterval: number;
+  distanceFilter: number;
+  stationaryRadius: number;
+  stopTimeout: number;
 }
-
-export interface CurationConfig {
-  minQualityScore: number;           // 0.0 - 1.0
-  maxPhotosPerStep: number;
-  junkThreshold: number;             // 0.0 - 1.0
-  autoSelectFeatured: boolean;
-}
-
-// ============================================================================
-// Analytics / Metrics Models (for KPI tracking)
-// ============================================================================
 
 export interface TripMetrics {
   tripId: string;
@@ -213,22 +208,7 @@ export interface TripMetrics {
   autoSteps: number;
   totalPhotos: number;
   featuredPhotos: number;
-  distanceTraveled: number;          // meters
+  distanceTraveled: number;
   durationDays: number;
-  manualInterventionRate: number;    // manualSteps / totalSteps
-}
-
-// ============================================================================
-// Helper Types
-// ============================================================================
-
-export type UUID = string;
-export type Timestamp = Date;
-export type ErrorType = 'network' | 'permission' | 'storage' | 'unknown';
-
-export interface AppError {
-  type: ErrorType;
-  message: string;
-  timestamp: Date;
-  context?: Record<string, any>;
+  manualInterventionRate: number;
 }

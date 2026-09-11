@@ -7,8 +7,8 @@ Version: 1.0 (MVP)
 1. Overview
 
 Product Name: Atlas (Working Title)
-Product Goal: To be the effortless, 100% private, automated travel journal that magically transforms a user's trips into beautiful, tangible memories.
-Core Concept: "Set it and forget it." The user lives their trip. The app writes the journal. The user buys the book.
+Product Goal: To be the effortless, 100% private travel companion that helps users plan trips and then magically transforms those trips into beautiful, tangible journals.
+Core Concept: Plan lightly. Travel freely. Atlas writes the journal. The user buys the book.
 
 2. The Problem
 
@@ -104,19 +104,29 @@ Must explicitly state: "Your data is 100% private, never sold, never seen by us.
 
 Must have clear "fallback" screens for users who deny permission, explaining how to enable it in Settings.
 
-2. Home "World Map" Screen:
+2. Discover + Plan Hub (Home):
 
-The default home screen.
+The default home screen is a planning + journal hub (not map-only).
 
-A "scratch map" visualization of all countries/states visited.
+Destination discovery with region filters and inspirational destination cards.
 
-A simple list of "My Trips" (e.g., "Japan 2024," "Italy 2023").
+"Ask Atlas…" natural-language shortcut to seed a trip (e.g., "3 nights in Tokyo").
 
-3. "Live Trip" Timeline UI:
+Quick path: plan a trip → day itinerary → start trip → automatic journaling.
 
-The main journal view.
+3. Trip Planning & Itinerary:
 
-Top: A Mapbox view showing the entire trip's path (flights, roads).
+Create a planned trip from a destination template.
+
+Day-by-day itinerary timeline users can edit before travel.
+
+One action to start a planned trip (switches to active tracking + journal mode).
+
+4. "Live Trip" Timeline UI:
+
+The main journal view for active/completed trips.
+
+Top: A map visualization showing the trip's path.
 
 Bottom: A chronological, vertical-scrolling timeline of "Steps."
 
@@ -124,7 +134,7 @@ Bottom: A chronological, vertical-scrolling timeline of "Steps."
 
 Each Step features the AI-selected photos and an area for the user to add notes.
 
-4. Manual Editing:
+5. Manual Editing:
 
 Users must be able to:
 
@@ -136,7 +146,7 @@ Add/Remove photos from a Step.
 
 Edit the text notes for a Step.
 
-5. Book Preview & Ordering Flow:
+6. Book Preview & Ordering Flow:
 
 A prominent "Print My Book" button on the Trip Timeline.
 
@@ -158,7 +168,7 @@ P2 - "Import Past Trips": A feature to scan a user's entire photo library and re
 
 NO Social Feed. No followers, no following, no public profiles, no "likes," no comments.
 
-NO Pre-Trip Planning. We are a journal (past), not a planner (future). This is a critical distinction that keeps the product focused.
+NO Live Booking Marketplace (for MVP). Planning covers destinations, day itineraries, and trip setup stubs (flights/stay/transport as planning placeholders). We do not become an OTA in MVP — when travel starts, Atlas journals.
 
 NO Web or Desktop App (for MVP). The core "magic" (tracking, photo access) is intrinsically mobile. We must be mobile-first.
 

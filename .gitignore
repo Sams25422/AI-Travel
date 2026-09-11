@@ -62,3 +62,7 @@ ios/fastlane/test_output
 
 # TypeScript
 *.tsbuildinfo
+
+.expo/
+dist/
+web-build/

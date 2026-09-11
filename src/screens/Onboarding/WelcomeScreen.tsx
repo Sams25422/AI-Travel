@@ -1,87 +1,76 @@
-/**
- * Welcome Screen - First onboarding screen
- * Shows value proposition and starts the onboarding flow
- */
-
 import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
-import {StackNavigationProp} from '@react-navigation/stack';
-import {RootStackParamList} from '../../navigation/AppNavigator';
-import {COLORS, FONT_SIZES, SPACING} from '@utils/constants';
+import {View, Text, StyleSheet, Pressable, Platform} from 'react-native';
+import type {NativeStackScreenProps} from '@react-navigation/native-stack';
+import type {OnboardingStackParamList} from '../../navigation/types';
+import {COLORS, FONT_SIZES, SPACING, RADIUS} from '../../theme';
 
-type WelcomeScreenProps = {
-  navigation: StackNavigationProp<RootStackParamList, 'OnboardingWelcome'>;
-};
+type Props = NativeStackScreenProps<OnboardingStackParamList, 'Welcome'>;
 
-export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({navigation}) => {
-  const handleStart = () => {
-    navigation.navigate('OnboardingLocation');
+export default function WelcomeScreen({navigation}: Props) {
+  const goNext = () => {
+    navigation.navigate('LocationPermission');
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Atlas</Text>
-        <Text style={styles.subtitle}>The journal that writes itself</Text>
-        <Text style={styles.description}>
-          Live your trip. We'll create the perfect memory book.
+      <View style={styles.hero}>
+        <Text style={styles.brand} accessibilityRole="header">
+          Atlas
+        </Text>
+        <Text style={styles.tagline}>The journal that writes itself</Text>
+        <Text style={styles.body}>
+          Live your trip. Atlas quietly tracks the path, curates your best photos
+          on-device, and turns the journey into a book you can hold.
         </Text>
       </View>
-
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.button} onPress={handleStart}>
-          <Text style={styles.buttonText}>Get Started</Text>
-        </TouchableOpacity>
-      </View>
+      <Pressable
+        style={({pressed}) => [styles.cta, pressed && styles.ctaPressed]}
+        onPress={goNext}
+        accessibilityRole="button"
+        accessibilityLabel="Get started"
+        testID="get-started"
+        // @ts-expect-error web cursor
+        cursor={Platform.OS === 'web' ? 'pointer' : undefined}>
+        <Text style={styles.ctaText}>Get started</Text>
+      </Pressable>
+      <Text style={styles.privacy}>100% private · photos never leave your phone</Text>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    padding: SPACING.xl,
+    justifyContent: 'space-between',
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-  },
-  title: {
+  hero: {flex: 1, justifyContent: 'center'},
+  brand: {
     fontSize: FONT_SIZES.xxxl,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: COLORS.primary,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
-  subtitle: {
+  tagline: {
     fontSize: FONT_SIZES.xl,
     fontWeight: '600',
     color: COLORS.textPrimary,
     marginBottom: SPACING.lg,
-    textAlign: 'center',
   },
-  description: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  footer: {
-    padding: SPACING.xl,
-  },
-  button: {
+  body: {fontSize: FONT_SIZES.md, lineHeight: 24, color: COLORS.textSecondary},
+  cta: {
     backgroundColor: COLORS.primary,
     paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: 12,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
   },
-  buttonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
+  ctaPressed: {opacity: 0.85},
+  ctaText: {color: COLORS.textInverse, fontSize: FONT_SIZES.lg, fontWeight: '600'},
+  privacy: {
+    textAlign: 'center',
+    marginTop: SPACING.md,
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
   },
 });
-
-export default WelcomeScreen;

@@ -1,364 +1,222 @@
 /**
- * TrackerService - Core Location Tracking Service
- *
- * This is the MOST CRITICAL service in Atlas.
- * Responsibilities:
- * - Background location tracking with battery optimization
- * - State-based tracking (stationary, walking, driving, flying)
- * - Store raw location data locally
- * - Batch sync to backend when connected
- *
- * NOTE: This is a stub. Native modules will be required for production.
+ * TrackerService — GPS via expo-location; Paris demo simulator on web
  */
-
-import {RawLocation, GeoPoint, ActivityType, TrackerConfig} from '@models';
-import {locationStorage, settingsStorage} from '@utils/storage';
-import {generateUUID, calculateSpeed, inferActivityFromSpeed, log, logError} from '@utils/helpers';
-import {TRACKING_CONFIG} from '@utils/constants';
-
-// ============================================================================
-// Types
-// ============================================================================
+import {Platform} from 'react-native';
+import * as Location from 'expo-location';
+import type {RawLocation, TrackerConfig, GeoPoint, ActivityType} from '../models';
+import {locationStorage, settingsStorage} from '../utils/storage';
+import {
+  generateUUID,
+  log,
+  logError,
+  calculateSpeed,
+  inferActivityFromSpeed,
+} from '../utils/helpers';
+import {TRACKING_CONFIG, LOCAL_USER_ID} from '../utils/constants';
+import PermissionService from './PermissionService';
 
 type TrackerState = 'stopped' | 'active' | 'paused';
 
-interface LocationUpdate {
-  location: GeoPoint;
-  accuracy: number;
-  altitude?: number;
-  speed?: number;
-  heading?: number;
-  timestamp: Date;
-}
-
-// ============================================================================
-// TrackerService Class
-// ============================================================================
+const DEMO_PATH: GeoPoint[] = [
+  {latitude: 48.8606, longitude: 2.3376},
+  {latitude: 48.8584, longitude: 2.2945},
+  {latitude: 48.8738, longitude: 2.295},
+  {latitude: 48.8867, longitude: 2.3431},
+  {latitude: 48.853, longitude: 2.3499},
+  {latitude: 48.8606, longitude: 2.3522},
+  {latitude: 48.849, longitude: 2.345},
+];
 
 class TrackerService {
   private state: TrackerState = 'stopped';
   private currentTripId: string | null = null;
-  private lastLocation: LocationUpdate | null = null;
+  private lastFix: {point: GeoPoint; at: Date} | null = null;
   private currentActivity: ActivityType = 'stationary';
   private config: TrackerConfig | null = null;
+  private watchSub: Location.LocationSubscription | null = null;
+  private demoTimer: ReturnType<typeof setInterval> | null = null;
+  private demoIndex = 0;
+  private demoMode = Platform.OS === 'web';
+  private listeners: Array<(loc: RawLocation) => void> = [];
 
-  // Timers & intervals
-  private trackingInterval: NodeJS.Timeout | null = null;
-  private syncInterval: NodeJS.Timeout | null = null;
-
-  /**
-   * Initialize the tracker service
-   */
   async initialize(): Promise<void> {
-    try {
-      log('TrackerService: Initializing...');
-
-      // Load saved config
-      this.config = await settingsStorage.getTrackerConfig();
-
-      if (!this.config) {
-        // Create default config
-        this.config = this.getDefaultConfig();
-        await settingsStorage.saveTrackerConfig(this.config);
-      }
-
-      // If there was an active trip, restore it
-      if (this.config.isActive && this.config.currentTripId) {
-        log('TrackerService: Restoring active trip', this.config.currentTripId);
-        // Note: Don't auto-start, let user manually resume
-      }
-
-      log('TrackerService: Initialized successfully');
-    } catch (error) {
-      logError(error as Error, {context: 'TrackerService.initialize'});
-      throw error;
+    log('TrackerService: Initializing');
+    this.config = (await settingsStorage.getTrackerConfig()) || this.defaultConfig();
+    await settingsStorage.saveTrackerConfig(this.config);
+    const settings = await settingsStorage.getSettings();
+    if (settings) this.demoMode = settings.demoMode || Platform.OS === 'web';
+    if (this.config.isActive && this.config.currentTripId) {
+      this.currentTripId = this.config.currentTripId;
     }
   }
 
-  /**
-   * Start tracking for a trip
-   */
-  async startTracking(tripId: string): Promise<void> {
-    try {
-      log('TrackerService: Starting tracking for trip', tripId);
-
-      // Check permissions first
-      const hasPermission = await this.checkLocationPermission();
-      if (!hasPermission) {
-        throw new Error('Location permission not granted');
-      }
-
-      this.currentTripId = tripId;
-      this.state = 'active';
-      this.currentActivity = 'stationary';
-
-      // Update config
-      if (this.config) {
-        this.config.isActive = true;
-        this.config.currentTripId = tripId;
-        await settingsStorage.saveTrackerConfig(this.config);
-      }
-
-      // Start tracking loop
-      this.startTrackingLoop();
-
-      // Start periodic sync
-      this.startSyncLoop();
-
-      log('TrackerService: Tracking started');
-    } catch (error) {
-      logError(error as Error, {context: 'TrackerService.startTracking'});
-      throw error;
-    }
+  onLocation(listener: (loc: RawLocation) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
   }
 
-  /**
-   * Stop tracking
-   */
-  async stopTracking(): Promise<void> {
-    try {
-      log('TrackerService: Stopping tracking');
-
-      this.state = 'stopped';
-      this.currentTripId = null;
-
-      // Clear intervals
-      if (this.trackingInterval) {
-        clearInterval(this.trackingInterval);
-        this.trackingInterval = null;
-      }
-
-      if (this.syncInterval) {
-        clearInterval(this.syncInterval);
-        this.syncInterval = null;
-      }
-
-      // Final sync
-      await this.syncPendingLocations();
-
-      // Update config
-      if (this.config) {
-        this.config.isActive = false;
-        this.config.currentTripId = undefined;
-        await settingsStorage.saveTrackerConfig(this.config);
-      }
-
-      log('TrackerService: Tracking stopped');
-    } catch (error) {
-      logError(error as Error, {context: 'TrackerService.stopTracking'});
-    }
+  setDemoMode(enabled: boolean): void {
+    this.demoMode = enabled;
   }
 
-  /**
-   * Pause tracking (user still on trip but temporarily stop)
-   */
-  async pauseTracking(): Promise<void> {
-    log('TrackerService: Pausing tracking');
-    this.state = 'paused';
-
-    if (this.trackingInterval) {
-      clearInterval(this.trackingInterval);
-      this.trackingInterval = null;
-    }
+  isDemoMode(): boolean {
+    return this.demoMode;
   }
 
-  /**
-   * Resume tracking
-   */
-  async resumeTracking(): Promise<void> {
-    if (!this.currentTripId) {
-      throw new Error('No active trip to resume');
-    }
-
-    log('TrackerService: Resuming tracking');
-    this.state = 'active';
-    this.startTrackingLoop();
-  }
-
-  /**
-   * Get current tracking state
-   */
   getState(): TrackerState {
     return this.state;
   }
 
-  /**
-   * Get current trip ID
-   */
   getCurrentTripId(): string | null {
     return this.currentTripId;
   }
 
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
-
-  /**
-   * Main tracking loop
-   */
-  private startTrackingLoop(): void {
-    // Clear existing interval
-    if (this.trackingInterval) {
-      clearInterval(this.trackingInterval);
+  async startTracking(tripId: string): Promise<void> {
+    log('TrackerService: start', tripId);
+    if (!this.demoMode) {
+      const status = await PermissionService.requestLocationWhenInUse();
+      if (status !== 'granted') {
+        throw new Error('Location permission is required to track your trip.');
+      }
     }
 
-    // Determine update interval based on activity
-    const interval = this.getUpdateInterval();
+    this.currentTripId = tripId;
+    this.state = 'active';
+    this.demoIndex = 0;
 
-    this.trackingInterval = setInterval(async () => {
-      if (this.state === 'active') {
-        await this.captureLocation();
-      }
-    }, interval);
+    if (this.config) {
+      this.config.isActive = true;
+      this.config.currentTripId = tripId;
+      await settingsStorage.saveTrackerConfig(this.config);
+    }
 
-    // Capture first location immediately
-    this.captureLocation();
+    if (this.demoMode) this.startDemoLoop();
+    else await this.startNativeWatch();
   }
 
-  /**
-   * Capture current location
-   *
-   * NOTE: This is a stub. In production, this would use:
-   * - iOS: CLLocationManager
-   * - Android: FusedLocationProviderClient
-   */
-  private async captureLocation(): Promise<void> {
-    try {
-      // TODO: Replace with actual native location API
-      // For now, using a mock implementation
-      const locationUpdate = await this.getCurrentLocation();
+  async stopTracking(): Promise<void> {
+    this.state = 'stopped';
+    this.currentTripId = null;
+    await this.clearWatchers();
+    if (this.config) {
+      this.config.isActive = false;
+      this.config.currentTripId = undefined;
+      await settingsStorage.saveTrackerConfig(this.config);
+    }
+  }
 
-      if (!locationUpdate) {
-        log('TrackerService: Unable to get location');
-        return;
+  async pauseTracking(): Promise<void> {
+    this.state = 'paused';
+    await this.clearWatchers();
+  }
+
+  async resumeTracking(): Promise<void> {
+    if (!this.currentTripId) throw new Error('No trip to resume');
+    this.state = 'active';
+    if (this.demoMode) this.startDemoLoop();
+    else await this.startNativeWatch();
+  }
+
+  async simulateDayTrip(tripId: string): Promise<number> {
+    this.currentTripId = tripId;
+    let count = 0;
+    const base = Date.now() - DEMO_PATH.length * 25 * 60 * 1000;
+    for (let i = 0; i < DEMO_PATH.length; i++) {
+      const point = DEMO_PATH[i];
+      for (let d = 0; d < 3; d++) {
+        const ts = new Date(base + i * 25 * 60 * 1000 + d * 8 * 60 * 1000);
+        await this.persist(point, ts, d === 0 && i > 0 ? 3.5 : 0.15);
+        count++;
       }
+    }
+    return count;
+  }
 
-      // Update activity based on speed
-      if (this.lastLocation) {
-        const speed = calculateSpeed(
-          this.lastLocation.location,
-          locationUpdate.location,
-          this.lastLocation.timestamp,
-          locationUpdate.timestamp,
+  private async startNativeWatch(): Promise<void> {
+    await this.clearWatchers();
+    this.watchSub = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: TRACKING_CONFIG.ACTIVE_INTERVAL,
+        distanceInterval: TRACKING_CONFIG.MIN_DISPLACEMENT,
+      },
+      loc => {
+        if (this.state !== 'active') return;
+        void this.persist(
+          {latitude: loc.coords.latitude, longitude: loc.coords.longitude},
+          new Date(loc.timestamp),
+          loc.coords.speed ?? undefined,
+          loc.coords.accuracy ?? undefined,
+          loc.coords.altitude ?? undefined,
+          loc.coords.heading ?? undefined,
         );
-        this.currentActivity = inferActivityFromSpeed(speed);
-      }
+      },
+    );
+  }
 
-      // Create raw location record
-      const rawLocation: RawLocation = {
-        id: generateUUID(),
-        ownerUid: 'local_user', // TODO: Get from auth
-        tripId: this.currentTripId!,
-        location: locationUpdate.location,
-        timestamp: locationUpdate.timestamp,
-        accuracy: locationUpdate.accuracy,
-        altitude: locationUpdate.altitude,
-        speed: locationUpdate.speed,
-        heading: locationUpdate.heading,
-        activity: this.currentActivity,
-        isProcessed: false,
-      };
+  private startDemoLoop(): void {
+    void this.clearWatchers();
+    void this.emitDemoPoint();
+    this.demoTimer = setInterval(() => {
+      if (this.state === 'active') void this.emitDemoPoint();
+    }, 4000);
+  }
 
-      // Save to local storage
-      await locationStorage.savePendingLocation(rawLocation);
+  private async emitDemoPoint(): Promise<void> {
+    const point = DEMO_PATH[this.demoIndex % DEMO_PATH.length];
+    this.demoIndex += 1;
+    await this.persist(point, new Date(), 1.1);
+  }
 
-      // Update last location
-      this.lastLocation = locationUpdate;
+  private async persist(
+    point: GeoPoint,
+    timestamp: Date,
+    speedHint?: number,
+    accuracy?: number,
+    altitude?: number,
+    heading?: number,
+  ): Promise<void> {
+    if (!this.currentTripId) return;
 
-      log('TrackerService: Location captured', {
-        lat: locationUpdate.location.latitude,
-        lng: locationUpdate.location.longitude,
-        activity: this.currentActivity,
-      });
-    } catch (error) {
-      logError(error as Error, {context: 'TrackerService.captureLocation'});
+    let speed = speedHint;
+    if ((speed == null || Number.isNaN(speed)) && this.lastFix) {
+      speed = calculateSpeed(this.lastFix.point, point, this.lastFix.at, timestamp);
+    }
+    this.currentActivity = inferActivityFromSpeed(speed ?? 0);
+
+    const raw: RawLocation = {
+      id: generateUUID(),
+      ownerUid: LOCAL_USER_ID,
+      tripId: this.currentTripId,
+      location: point,
+      timestamp: timestamp.toISOString(),
+      accuracy,
+      altitude,
+      speed: speed ?? undefined,
+      heading,
+      activity: this.currentActivity,
+      isProcessed: false,
+    };
+
+    await locationStorage.savePending(raw);
+    this.lastFix = {point, at: timestamp};
+    this.listeners.forEach(l => l(raw));
+  }
+
+  private async clearWatchers(): Promise<void> {
+    if (this.watchSub) {
+      this.watchSub.remove();
+      this.watchSub = null;
+    }
+    if (this.demoTimer) {
+      clearInterval(this.demoTimer);
+      this.demoTimer = null;
     }
   }
 
-  /**
-   * Get current location from device
-   *
-   * TODO: Implement with native modules
-   */
-  private async getCurrentLocation(): Promise<LocationUpdate | null> {
-    // Mock implementation
-    // In production, this would call native location APIs
-    return null;
-  }
-
-  /**
-   * Sync pending locations to backend
-   */
-  private async syncPendingLocations(): Promise<void> {
-    try {
-      const pending = await locationStorage.getPendingLocations();
-
-      if (pending.length === 0) {
-        return;
-      }
-
-      log('TrackerService: Syncing locations', {count: pending.length});
-
-      // TODO: Implement backend sync
-      // For now, just log
-      // In production:
-      // 1. Batch upload to Firestore
-      // 2. Mark as processed
-      // 3. Remove from local storage
-
-      log('TrackerService: Locations synced (mock)');
-    } catch (error) {
-      logError(error as Error, {context: 'TrackerService.syncPendingLocations'});
-    }
-  }
-
-  /**
-   * Start periodic sync loop
-   */
-  private startSyncLoop(): void {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-    }
-
-    // Sync every 5 minutes
-    this.syncInterval = setInterval(async () => {
-      await this.syncPendingLocations();
-    }, 300000);
-  }
-
-  /**
-   * Check if location permission is granted
-   *
-   * TODO: Implement with native permission APIs
-   */
-  private async checkLocationPermission(): Promise<boolean> {
-    // Mock implementation
-    // In production, check native permissions
-    return true;
-  }
-
-  /**
-   * Get update interval based on current activity
-   */
-  private getUpdateInterval(): number {
-    switch (this.currentActivity) {
-      case 'stationary':
-        return TRACKING_CONFIG.STATIONARY_INTERVAL;
-      case 'walking':
-        return TRACKING_CONFIG.ACTIVE_INTERVAL;
-      case 'driving':
-      case 'flying':
-      case 'train':
-        return TRACKING_CONFIG.ACTIVE_INTERVAL;
-      default:
-        return TRACKING_CONFIG.IDLE_INTERVAL;
-    }
-  }
-
-  /**
-   * Get default tracker configuration
-   */
-  private getDefaultConfig(): TrackerConfig {
+  private defaultConfig(): TrackerConfig {
     return {
       isActive: false,
       updateInterval: TRACKING_CONFIG.ACTIVE_INTERVAL,
@@ -368,9 +226,5 @@ class TrackerService {
     };
   }
 }
-
-// ============================================================================
-// Export Singleton Instance
-// ============================================================================
 
 export default new TrackerService();

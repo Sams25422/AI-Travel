@@ -1,253 +1,227 @@
 /**
- * Local Storage Utilities
- * Wraps AsyncStorage for type-safe local data persistence
+ * AsyncStorage wrappers
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {Trip, Step, RawLocation, UserSettings, TrackerConfig} from '@models';
+import type {
+  Trip,
+  Step,
+  RawLocation,
+  UserSettings,
+  TrackerConfig,
+  BookOrder,
+  PhotoCluster,
+  AppPermissions,
+  ItineraryItem,
+} from '../models';
 
-// ============================================================================
-// Storage Keys
-// ============================================================================
-
-const STORAGE_KEYS = {
-  // User & Settings
+export const STORAGE_KEYS = {
   USER_SETTINGS: '@atlas/user_settings',
   ONBOARDING_COMPLETED: '@atlas/onboarding_completed',
-
-  // Active Trip
   ACTIVE_TRIP_ID: '@atlas/active_trip_id',
   TRACKER_CONFIG: '@atlas/tracker_config',
-
-  // Offline Data Cache
   TRIPS: '@atlas/trips',
+  STEPS: '@atlas/steps',
+  ITINERARY: '@atlas/itinerary',
   PENDING_LOCATIONS: '@atlas/pending_locations',
-
-  // App State
+  PHOTO_CLUSTERS: '@atlas/photo_clusters',
+  ORDERS: '@atlas/orders',
   PERMISSIONS: '@atlas/permissions',
-  LAST_SYNC: '@atlas/last_sync',
 } as const;
 
-// ============================================================================
-// Generic Storage Functions
-// ============================================================================
-
 export const storage = {
-  /**
-   * Save data to AsyncStorage
-   */
   async set<T>(key: string, value: T): Promise<void> {
-    try {
-      const jsonValue = JSON.stringify(value);
-      await AsyncStorage.setItem(key, jsonValue);
-    } catch (error) {
-      console.error(`Error saving ${key}:`, error);
-      throw error;
-    }
+    await AsyncStorage.setItem(key, JSON.stringify(value));
   },
-
-  /**
-   * Get data from AsyncStorage
-   */
   async get<T>(key: string): Promise<T | null> {
-    try {
-      const jsonValue = await AsyncStorage.getItem(key);
-      return jsonValue != null ? JSON.parse(jsonValue) : null;
-    } catch (error) {
-      console.error(`Error reading ${key}:`, error);
-      return null;
-    }
+    const raw = await AsyncStorage.getItem(key);
+    return raw != null ? (JSON.parse(raw) as T) : null;
   },
-
-  /**
-   * Remove data from AsyncStorage
-   */
   async remove(key: string): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(key);
-    } catch (error) {
-      console.error(`Error removing ${key}:`, error);
-      throw error;
-    }
+    await AsyncStorage.removeItem(key);
   },
-
-  /**
-   * Clear all AsyncStorage data (use with caution!)
-   */
   async clear(): Promise<void> {
-    try {
-      await AsyncStorage.clear();
-    } catch (error) {
-      console.error('Error clearing storage:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get multiple keys at once
-   */
-  async multiGet(keys: string[]): Promise<Record<string, any>> {
-    try {
-      const pairs = await AsyncStorage.multiGet(keys);
-      const result: Record<string, any> = {};
-      pairs.forEach(([key, value]) => {
-        result[key] = value ? JSON.parse(value) : null;
-      });
-      return result;
-    } catch (error) {
-      console.error('Error in multiGet:', error);
-      return {};
-    }
+    await AsyncStorage.clear();
   },
 };
 
-// ============================================================================
-// Domain-Specific Storage Functions
-// ============================================================================
-
 export const tripStorage = {
-  /**
-   * Save a trip to local storage
-   */
-  async saveTrip(trip: Trip): Promise<void> {
-    const trips = await this.getAllTrips();
-    const index = trips.findIndex(t => t.id === trip.id);
-
-    if (index >= 0) {
-      trips[index] = trip;
-    } else {
-      trips.push(trip);
-    }
-
+  async save(trip: Trip): Promise<void> {
+    const trips = await this.getAll();
+    const i = trips.findIndex(t => t.id === trip.id);
+    if (i >= 0) trips[i] = trip;
+    else trips.push(trip);
     await storage.set(STORAGE_KEYS.TRIPS, trips);
   },
-
-  /**
-   * Get all trips from local storage
-   */
-  async getAllTrips(): Promise<Trip[]> {
-    const trips = await storage.get<Trip[]>(STORAGE_KEYS.TRIPS);
-    return trips || [];
+  async getAll(): Promise<Trip[]> {
+    return (await storage.get<Trip[]>(STORAGE_KEYS.TRIPS)) || [];
   },
-
-  /**
-   * Get a specific trip by ID
-   */
-  async getTrip(tripId: string): Promise<Trip | null> {
-    const trips = await this.getAllTrips();
-    return trips.find(t => t.id === tripId) || null;
+  async get(tripId: string): Promise<Trip | null> {
+    return (await this.getAll()).find(t => t.id === tripId) || null;
   },
-
-  /**
-   * Delete a trip
-   */
-  async deleteTrip(tripId: string): Promise<void> {
-    const trips = await this.getAllTrips();
-    const filtered = trips.filter(t => t.id !== tripId);
-    await storage.set(STORAGE_KEYS.TRIPS, filtered);
+  async remove(tripId: string): Promise<void> {
+    await storage.set(
+      STORAGE_KEYS.TRIPS,
+      (await this.getAll()).filter(t => t.id !== tripId),
+    );
+    await storage.set(
+      STORAGE_KEYS.STEPS,
+      (await stepStorage.getAll()).filter(s => s.tripId !== tripId),
+    );
+    await storage.set(
+      STORAGE_KEYS.ITINERARY,
+      (await itineraryStorage.getAll()).filter(i => i.tripId !== tripId),
+    );
   },
-
-  /**
-   * Get the currently active trip ID
-   */
   async getActiveTripId(): Promise<string | null> {
     return storage.get<string>(STORAGE_KEYS.ACTIVE_TRIP_ID);
   },
-
-  /**
-   * Set the active trip ID
-   */
   async setActiveTripId(tripId: string | null): Promise<void> {
-    if (tripId) {
-      await storage.set(STORAGE_KEYS.ACTIVE_TRIP_ID, tripId);
-    } else {
-      await storage.remove(STORAGE_KEYS.ACTIVE_TRIP_ID);
-    }
+    if (tripId) await storage.set(STORAGE_KEYS.ACTIVE_TRIP_ID, tripId);
+    else await storage.remove(STORAGE_KEYS.ACTIVE_TRIP_ID);
+  },
+};
+
+export const itineraryStorage = {
+  async getAll(): Promise<ItineraryItem[]> {
+    return (await storage.get<ItineraryItem[]>(STORAGE_KEYS.ITINERARY)) || [];
+  },
+  async getForTrip(tripId: string): Promise<ItineraryItem[]> {
+    return (await this.getAll())
+      .filter(i => i.tripId === tripId)
+      .sort((a, b) => a.dayIndex - b.dayIndex || a.sortOrder - b.sortOrder || +new Date(a.startTime) - +new Date(b.startTime));
+  },
+  async get(id: string): Promise<ItineraryItem | null> {
+    return (await this.getAll()).find(i => i.id === id) || null;
+  },
+  async save(item: ItineraryItem): Promise<void> {
+    const items = await this.getAll();
+    const i = items.findIndex(x => x.id === item.id);
+    if (i >= 0) items[i] = item;
+    else items.push(item);
+    await storage.set(STORAGE_KEYS.ITINERARY, items);
+  },
+  async replaceForTrip(tripId: string, items: ItineraryItem[]): Promise<void> {
+    const others = (await this.getAll()).filter(i => i.tripId !== tripId);
+    await storage.set(STORAGE_KEYS.ITINERARY, [...others, ...items]);
+  },
+  async remove(id: string): Promise<void> {
+    await storage.set(
+      STORAGE_KEYS.ITINERARY,
+      (await this.getAll()).filter(i => i.id !== id),
+    );
+  },
+};
+
+export const stepStorage = {
+  async getAll(): Promise<Step[]> {
+    return (await storage.get<Step[]>(STORAGE_KEYS.STEPS)) || [];
+  },
+  async getForTrip(tripId: string): Promise<Step[]> {
+    return (await this.getAll())
+      .filter(s => s.tripId === tripId)
+      .sort((a, b) => +new Date(a.startTime) - +new Date(b.startTime));
+  },
+  async get(stepId: string): Promise<Step | null> {
+    return (await this.getAll()).find(s => s.id === stepId) || null;
+  },
+  async save(step: Step): Promise<void> {
+    const steps = await this.getAll();
+    const i = steps.findIndex(s => s.id === step.id);
+    if (i >= 0) steps[i] = step;
+    else steps.push(step);
+    await storage.set(STORAGE_KEYS.STEPS, steps);
+  },
+  async remove(stepId: string): Promise<void> {
+    await storage.set(
+      STORAGE_KEYS.STEPS,
+      (await this.getAll()).filter(s => s.id !== stepId),
+    );
+  },
+  async replaceForTrip(tripId: string, newSteps: Step[]): Promise<void> {
+    const others = (await this.getAll()).filter(s => s.tripId !== tripId);
+    await storage.set(STORAGE_KEYS.STEPS, [...others, ...newSteps]);
   },
 };
 
 export const locationStorage = {
-  /**
-   * Store raw location points that haven't been synced yet
-   */
-  async savePendingLocation(location: RawLocation): Promise<void> {
-    const pending = await this.getPendingLocations();
+  async savePending(location: RawLocation): Promise<void> {
+    const pending = await this.getPending();
     pending.push(location);
     await storage.set(STORAGE_KEYS.PENDING_LOCATIONS, pending);
   },
-
-  /**
-   * Get all pending locations
-   */
-  async getPendingLocations(): Promise<RawLocation[]> {
-    const locations = await storage.get<RawLocation[]>(STORAGE_KEYS.PENDING_LOCATIONS);
-    return locations || [];
+  async getPending(): Promise<RawLocation[]> {
+    return (await storage.get<RawLocation[]>(STORAGE_KEYS.PENDING_LOCATIONS)) || [];
   },
-
-  /**
-   * Clear pending locations (after successful sync)
-   */
-  async clearPendingLocations(): Promise<void> {
+  async getForTrip(tripId: string): Promise<RawLocation[]> {
+    return (await this.getPending())
+      .filter(l => l.tripId === tripId)
+      .sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp));
+  },
+  async clearPending(): Promise<void> {
     await storage.set(STORAGE_KEYS.PENDING_LOCATIONS, []);
   },
+  async markProcessed(ids: string[]): Promise<void> {
+    const set = new Set(ids);
+    await storage.set(
+      STORAGE_KEYS.PENDING_LOCATIONS,
+      (await this.getPending()).map(l => (set.has(l.id) ? {...l, isProcessed: true} : l)),
+    );
+  },
+};
 
-  /**
-   * Remove specific locations after sync
-   */
-  async removeSyncedLocations(locationIds: string[]): Promise<void> {
-    const pending = await this.getPendingLocations();
-    const remaining = pending.filter(loc => !locationIds.includes(loc.id));
-    await storage.set(STORAGE_KEYS.PENDING_LOCATIONS, remaining);
+export const clusterStorage = {
+  async getAll(): Promise<PhotoCluster[]> {
+    return (await storage.get<PhotoCluster[]>(STORAGE_KEYS.PHOTO_CLUSTERS)) || [];
+  },
+  async saveForTrip(tripId: string, clusters: PhotoCluster[]): Promise<void> {
+    const others = (await this.getAll()).filter(c => c.tripId !== tripId);
+    await storage.set(STORAGE_KEYS.PHOTO_CLUSTERS, [...others, ...clusters]);
+  },
+  async getForTrip(tripId: string): Promise<PhotoCluster[]> {
+    return (await this.getAll()).filter(c => c.tripId === tripId);
+  },
+};
+
+export const orderStorage = {
+  async getAll(): Promise<BookOrder[]> {
+    return (await storage.get<BookOrder[]>(STORAGE_KEYS.ORDERS)) || [];
+  },
+  async save(order: BookOrder): Promise<void> {
+    const orders = await this.getAll();
+    const i = orders.findIndex(o => o.id === order.id);
+    if (i >= 0) orders[i] = order;
+    else orders.push(order);
+    await storage.set(STORAGE_KEYS.ORDERS, orders);
+  },
+  async get(orderId: string): Promise<BookOrder | null> {
+    return (await this.getAll()).find(o => o.id === orderId) || null;
   },
 };
 
 export const settingsStorage = {
-  /**
-   * Save user settings
-   */
   async saveSettings(settings: UserSettings): Promise<void> {
     await storage.set(STORAGE_KEYS.USER_SETTINGS, settings);
   },
-
-  /**
-   * Get user settings
-   */
   async getSettings(): Promise<UserSettings | null> {
     return storage.get<UserSettings>(STORAGE_KEYS.USER_SETTINGS);
   },
-
-  /**
-   * Get tracker configuration
-   */
   async getTrackerConfig(): Promise<TrackerConfig | null> {
     return storage.get<TrackerConfig>(STORAGE_KEYS.TRACKER_CONFIG);
   },
-
-  /**
-   * Save tracker configuration
-   */
   async saveTrackerConfig(config: TrackerConfig): Promise<void> {
     await storage.set(STORAGE_KEYS.TRACKER_CONFIG, config);
   },
-
-  /**
-   * Check if onboarding is completed
-   */
   async isOnboardingCompleted(): Promise<boolean> {
-    const completed = await storage.get<boolean>(STORAGE_KEYS.ONBOARDING_COMPLETED);
-    return completed || false;
+    return (await storage.get<boolean>(STORAGE_KEYS.ONBOARDING_COMPLETED)) || false;
   },
-
-  /**
-   * Mark onboarding as completed
-   */
   async completeOnboarding(): Promise<void> {
     await storage.set(STORAGE_KEYS.ONBOARDING_COMPLETED, true);
   },
+  async savePermissions(permissions: AppPermissions): Promise<void> {
+    await storage.set(STORAGE_KEYS.PERMISSIONS, permissions);
+  },
+  async getPermissions(): Promise<AppPermissions | null> {
+    return storage.get<AppPermissions>(STORAGE_KEYS.PERMISSIONS);
+  },
 };
-
-// ============================================================================
-// Export all storage keys for reference
-// ============================================================================
-
-export {STORAGE_KEYS};
