@@ -1,6 +1,7 @@
 /**
  * AppContext — global trip / planning / onboarding state
  */
+import {Platform} from 'react-native';
 import React, {
   createContext,
   useCallback,
@@ -67,7 +68,12 @@ interface AppContextValue {
     notes?: string;
   }) => Promise<ItineraryItem>;
   removeItineraryItem: (id: string) => Promise<void>;
+  updateItineraryItem: (
+    id: string,
+    updates: Partial<Pick<ItineraryItem, 'title' | 'notes' | 'dayIndex' | 'type' | 'isConfirmed'>>,
+  ) => Promise<ItineraryItem>;
   startPlannedTrip: (tripId: string) => Promise<Trip>;
+  updateSettings: (patch: Partial<UserSettings>) => Promise<UserSettings>;
 }
 
 const defaultPermissions: AppPermissions = {
@@ -84,7 +90,8 @@ const defaultSettings: UserSettings = {
   privacyMode: true,
   preferredUnits: 'metric',
   language: 'en',
-  demoMode: true,
+  // Live GPS on device; Paris simulator stays default on web.
+  demoMode: Platform.OS === 'web',
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -112,9 +119,20 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
         const saved = await settingsStorage.getSettings();
         if (saved) {
           setSettings(saved);
-          TrackerService.setDemoMode(saved.demoMode);
+          const effectiveDemo = Platform.OS === 'web' ? true : saved.demoMode;
+          if (effectiveDemo !== saved.demoMode) {
+            const fixed = {...saved, demoMode: effectiveDemo};
+            await settingsStorage.saveSettings(fixed);
+            setSettings(fixed);
+            TrackerService.setDemoMode(true);
+          } else {
+            TrackerService.setDemoMode(saved.demoMode);
+          }
         } else {
-          await settingsStorage.saveSettings(defaultSettings);
+          const initial = {...defaultSettings, demoMode: Platform.OS === 'web'};
+          await settingsStorage.saveSettings(initial);
+          setSettings(initial);
+          TrackerService.setDemoMode(initial.demoMode);
         }
         setPermissions(await PermissionService.checkAll());
         await refreshTrips();
@@ -263,6 +281,29 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
     await PlanService.removeItem(id);
   }, []);
 
+  const updateItineraryItem = useCallback(
+    async (
+      id: string,
+      updates: Partial<
+        Pick<ItineraryItem, 'title' | 'notes' | 'dayIndex' | 'type' | 'isConfirmed'>
+      >,
+    ) => PlanService.updateItem(id, updates),
+    [],
+  );
+
+  const updateSettings = useCallback(async (patch: Partial<UserSettings>) => {
+    const next: UserSettings = {
+      ...settings,
+      ...patch,
+      // Web keeps the Paris simulator; device users can toggle freely.
+      demoMode: Platform.OS === 'web' ? true : (patch.demoMode ?? settings.demoMode),
+    };
+    await settingsStorage.saveSettings(next);
+    setSettings(next);
+    TrackerService.setDemoMode(next.demoMode);
+    return next;
+  }, [settings]);
+
   const startPlannedTrip = useCallback(
     async (tripId: string) => {
       const trip = await PlanService.startPlannedTrip(tripId);
@@ -297,7 +338,9 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
       getItinerary,
       addItineraryItem,
       removeItineraryItem,
+      updateItineraryItem,
       startPlannedTrip,
+      updateSettings,
     }),
     [
       ready,
@@ -323,7 +366,9 @@ export const AppProvider: React.FC<{children: React.ReactNode}> = ({children}) =
       getItinerary,
       addItineraryItem,
       removeItineraryItem,
+      updateItineraryItem,
       startPlannedTrip,
+      updateSettings,
     ],
   );
 

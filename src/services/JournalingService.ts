@@ -2,6 +2,7 @@
  * JournalingService — on-device location → Step generation
  */
 import * as Location from 'expo-location';
+import * as MediaLibrary from 'expo-media-library';
 import {Platform} from 'react-native';
 import type {RawLocation, Step, StepType, Photo, GeoPoint} from '../models';
 import {locationStorage, stepStorage} from '../utils/storage';
@@ -117,6 +118,73 @@ class JournalingService {
       if (!merged.find(m => m.nativeId === p.nativeId)) merged.push(p);
     }
     return this.updateStep(stepId, {photos: merged});
+  }
+
+  async removePhoto(stepId: string, nativeId: string): Promise<Step> {
+    const step = await stepStorage.get(stepId);
+    if (!step) throw new Error('Step not found');
+    return this.updateStep(stepId, {
+      photos: step.photos.filter(p => p.nativeId !== nativeId),
+    });
+  }
+
+  /** Attach recent library assets (or a demo image on web / without permission). */
+  async attachFromLibrary(stepId: string, limit = 3): Promise<Step> {
+    const step = await stepStorage.get(stepId);
+    if (!step) throw new Error('Step not found');
+
+    if (Platform.OS === 'web') {
+      const demo: Photo = {
+        nativeId: `manual_demo_${Date.now()}`,
+        uri: 'https://images.unsplash.com/photo-1488646953015-23f0c92cac84?w=800',
+        qualityScore: 0.9,
+        isFeatured: step.photos.length === 0,
+        timestamp: nowISO(),
+        location: step.location,
+      };
+      return this.attachPhotos(stepId, [demo]);
+    }
+
+    try {
+      const perm = await MediaLibrary.requestPermissionsAsync();
+      if (perm.status !== 'granted') {
+        throw new Error('Photo library permission is required.');
+      }
+      const page = await MediaLibrary.getAssetsAsync({
+        first: limit,
+        mediaType: MediaLibrary.MediaType.photo,
+        sortBy: [MediaLibrary.SortBy.creationTime],
+      });
+      const photos: Photo[] = [];
+      for (const asset of page.assets) {
+        let location: GeoPoint | undefined;
+        try {
+          const info = await MediaLibrary.getAssetInfoAsync(asset);
+          if (info.location) {
+            location = {
+              latitude: info.location.latitude,
+              longitude: info.location.longitude,
+            };
+          }
+        } catch {
+          // EXIF optional
+        }
+        photos.push({
+          nativeId: asset.id,
+          uri: asset.uri,
+          qualityScore: 0.8,
+          isFeatured: false,
+          timestamp: new Date(asset.creationTime).toISOString(),
+          location,
+        });
+      }
+      if (!photos.length) throw new Error('No photos found in the library.');
+      if (photos[0]) photos[0].isFeatured = step.photos.length === 0;
+      return this.attachPhotos(stepId, photos);
+    } catch (error) {
+      logError(error as Error, {context: 'JournalingService.attachFromLibrary'});
+      throw error;
+    }
   }
 
   private detectVisits(locations: RawLocation[]): VisitCluster[] {

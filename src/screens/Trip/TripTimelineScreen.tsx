@@ -12,26 +12,41 @@ import {
 import {useFocusEffect} from '@react-navigation/native';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../navigation/types';
-import type {Step} from '../../models';
+import type {GeoPoint, Step} from '../../models';
 import {useApp} from '../../context/AppContext';
 import {COLORS, FONT_SIZES, SPACING, RADIUS} from '../../theme';
 import {formatDateTime} from '../../utils/helpers';
+import {locationStorage} from '../../utils/storage';
 import TripService from '../../services/TripService';
+import TrackerService from '../../services/TrackerService';
+import TripMap from '../../components/TripMap';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TripTimeline'>;
 
 export default function TripTimelineScreen({navigation, route}: Props) {
   const {tripId} = route.params;
-  const {getSteps, refreshJournal, completeTrip, addManualStep} = useApp();
+  const {getSteps, refreshJournal, completeTrip, addManualStep, settings} = useApp();
   const [steps, setSteps] = useState<Step[]>([]);
+  const [path, setPath] = useState<GeoPoint[]>([]);
   const [title, setTitle] = useState('Trip');
   const [busy, setBusy] = useState(false);
+  const [trackingHint, setTrackingHint] = useState('');
 
   const load = useCallback(async () => {
     const trip = await TripService.getTrip(tripId);
     if (trip) setTitle(trip.name);
     setSteps(await getSteps(tripId));
-  }, [getSteps, tripId]);
+    const locs = await locationStorage.getForTrip(tripId);
+    setPath(locs.map(l => l.location));
+    const demo = TrackerService.isDemoMode() || settings.demoMode;
+    setTrackingHint(
+      demo
+        ? 'Demo GPS · Paris sample path'
+        : locs.length
+          ? `Live path · ${locs.length} fixes`
+          : 'Live GPS · waiting for fixes',
+    );
+  }, [getSteps, settings.demoMode, tripId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -43,6 +58,8 @@ export default function TripTimelineScreen({navigation, route}: Props) {
     setBusy(true);
     try {
       setSteps(await refreshJournal(tripId));
+      const locs = await locationStorage.getForTrip(tripId);
+      setPath(locs.map(l => l.location));
     } finally {
       setBusy(false);
     }
@@ -58,8 +75,11 @@ export default function TripTimelineScreen({navigation, route}: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.meta}>{steps.length} steps</Text>
+        <Text style={styles.meta}>
+          {steps.length} steps · {trackingHint}
+        </Text>
       </View>
+      <TripMap path={path} steps={steps} />
       <FlatList
         data={steps}
         keyExtractor={item => item.id}

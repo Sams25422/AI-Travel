@@ -26,6 +26,7 @@ export default function ItineraryScreen({navigation, route}: Props) {
     getItinerary,
     addItineraryItem,
     removeItineraryItem,
+    updateItineraryItem,
     startPlannedTrip,
   } = useApp();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -33,6 +34,10 @@ export default function ItineraryScreen({navigation, route}: Props) {
   const [busy, setBusy] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editDay, setEditDay] = useState('1');
 
   const load = useCallback(async () => {
     setTrip(await TripService.getTrip(tripId));
@@ -63,12 +68,31 @@ export default function ItineraryScreen({navigation, route}: Props) {
     await load();
   };
 
+  const beginEdit = (item: ItineraryItem) => {
+    setEditingId(item.id);
+    setEditTitle(item.title);
+    setEditNotes(item.notes || '');
+    setEditDay(String(item.dayIndex + 1));
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editTitle.trim()) return;
+    const dayIndex = Math.max(0, (parseInt(editDay, 10) || 1) - 1);
+    await updateItineraryItem(editingId, {
+      title: editTitle.trim(),
+      notes: editNotes.trim(),
+      dayIndex,
+    });
+    setEditingId(null);
+    await load();
+  };
+
   const onStart = async () => {
     setBusy(true);
     setMessage('');
     try {
       await startPlannedTrip(tripId);
-      setMessage('Trip is live — Atlas is journaling.');
+      setMessage('Trip is live — plan stops seeded into the journal.');
       navigation.replace('TripTimeline', {tripId});
     } catch (e) {
       setMessage((e as Error).message);
@@ -86,6 +110,9 @@ export default function ItineraryScreen({navigation, route}: Props) {
         {trip?.startDate ? ` · starts ${formatDate(trip.startDate)}` : ''}
       </Text>
       <Text style={styles.status}>{trip?.status || '…'}</Text>
+      <Text style={styles.linkHint}>
+        When you start, confirmed stops become journal steps Atlas can track against.
+      </Text>
 
       {days.length === 0 ? (
         <Text style={styles.empty}>
@@ -98,27 +125,82 @@ export default function ItineraryScreen({navigation, route}: Props) {
             {grouped[day].map(item => (
               <View key={item.id} style={styles.item}>
                 <View style={styles.itemRail}>
-                  <View style={styles.dot} />
+                  <View style={[styles.dot, item.isConfirmed && styles.dotConfirmed]} />
                   <View style={styles.line} />
                 </View>
                 <View style={styles.itemBody}>
-                  <Text style={styles.itemTime}>
-                    {formatTime(item.startTime)}
-                    {item.endTime ? ` – ${formatTime(item.endTime)}` : ''}
-                  </Text>
-                  <Text style={styles.itemTitle}>{item.title}</Text>
-                  {item.notes ? (
-                    <Text style={styles.itemNotes}>{item.notes}</Text>
-                  ) : null}
-                  <Text style={styles.itemType}>{item.type}</Text>
-                  <Pressable
-                    onPress={async () => {
-                      await removeItineraryItem(item.id);
-                      await load();
-                    }}
-                    hitSlop={8}>
-                    <Text style={styles.remove}>Remove</Text>
-                  </Pressable>
+                  {editingId === item.id ? (
+                    <>
+                      <Text style={styles.editLabel}>Title</Text>
+                      <TextInput
+                        style={styles.editInput}
+                        value={editTitle}
+                        onChangeText={setEditTitle}
+                      />
+                      <Text style={styles.editLabel}>Day</Text>
+                      <TextInput
+                        style={styles.editInput}
+                        value={editDay}
+                        onChangeText={setEditDay}
+                        keyboardType="number-pad"
+                      />
+                      <Text style={styles.editLabel}>Notes</Text>
+                      <TextInput
+                        style={[styles.editInput, styles.editNotes]}
+                        value={editNotes}
+                        onChangeText={setEditNotes}
+                        multiline
+                      />
+                      <View style={styles.editActions}>
+                        <Pressable onPress={() => setEditingId(null)}>
+                          <Text style={styles.cancel}>Cancel</Text>
+                        </Pressable>
+                        <Pressable onPress={saveEdit}>
+                          <Text style={styles.save}>Save</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.itemTime}>
+                        {formatTime(item.startTime)}
+                        {item.endTime ? ` – ${formatTime(item.endTime)}` : ''}
+                      </Text>
+                      <Text style={styles.itemTitle}>{item.title}</Text>
+                      {item.notes ? (
+                        <Text style={styles.itemNotes}>{item.notes}</Text>
+                      ) : null}
+                      <Text style={styles.itemType}>
+                        {item.type}
+                        {item.isConfirmed ? ' · linked' : ''}
+                      </Text>
+                      <View style={styles.itemActions}>
+                        <Pressable onPress={() => beginEdit(item)} hitSlop={8}>
+                          <Text style={styles.edit}>Edit</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={async () => {
+                            await updateItineraryItem(item.id, {
+                              isConfirmed: !item.isConfirmed,
+                            });
+                            await load();
+                          }}
+                          hitSlop={8}>
+                          <Text style={styles.confirm}>
+                            {item.isConfirmed ? 'Unconfirm' : 'Confirm'}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={async () => {
+                            await removeItineraryItem(item.id);
+                            await load();
+                          }}
+                          hitSlop={8}>
+                          <Text style={styles.remove}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  )}
                 </View>
               </View>
             ))}
@@ -183,6 +265,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     textTransform: 'uppercase',
   },
+  linkHint: {
+    marginTop: SPACING.sm,
+    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
+  },
   empty: {marginTop: SPACING.xl, color: COLORS.textSecondary},
   dayBlock: {marginTop: SPACING.lg},
   dayTitle: {
@@ -197,9 +285,10 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.gray300,
     marginTop: 6,
   },
+  dotConfirmed: {backgroundColor: COLORS.accent},
   line: {
     flex: 1,
     width: 2,
@@ -229,7 +318,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
   },
-  remove: {marginTop: 8, color: COLORS.error, fontSize: FONT_SIZES.sm},
+  itemActions: {flexDirection: 'row', gap: SPACING.md, marginTop: 8},
+  edit: {color: COLORS.primary, fontSize: FONT_SIZES.sm, fontWeight: '600'},
+  confirm: {color: COLORS.accent, fontSize: FONT_SIZES.sm, fontWeight: '600'},
+  remove: {color: COLORS.error, fontSize: FONT_SIZES.sm},
+  editLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+    marginTop: 6,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderColor: COLORS.gray200,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.gray50,
+  },
+  editNotes: {minHeight: 72, textAlignVertical: 'top'},
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: SPACING.lg,
+    marginTop: SPACING.sm,
+  },
+  cancel: {color: COLORS.textSecondary, fontWeight: '600'},
+  save: {color: COLORS.primary, fontWeight: '700'},
   label: {
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,

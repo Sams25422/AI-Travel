@@ -8,12 +8,19 @@ import type {
   BudgetLevel,
   TripStyle,
   GeoPoint,
+  StepType,
 } from '../models';
-import {itineraryStorage, tripStorage} from '../utils/storage';
+import {itineraryStorage, stepStorage, tripStorage} from '../utils/storage';
 import {generateUUID, nowISO, log} from '../utils/helpers';
 import {LOCAL_USER_ID} from '../utils/constants';
 import {getDestination, type Destination} from '../data/destinations';
 import TripService from './TripService';
+import JournalingService from './JournalingService';
+
+function itineraryTypeToStep(type: ItineraryItemType): StepType {
+  if (type === 'note') return 'visit';
+  return type;
+}
 
 export interface CreatePlanInput {
   destinationId?: string;
@@ -191,7 +198,7 @@ class PlanService {
     await itineraryStorage.remove(id);
   }
 
-  /** Planned → active tracking. Keeps itinerary for reference. */
+  /** Planned → active tracking. Soft-links itinerary into the journal once. */
   async startPlannedTrip(tripId: string): Promise<Trip> {
     const trip = await tripStorage.get(tripId);
     if (!trip) throw new Error('Trip not found');
@@ -199,6 +206,35 @@ class PlanService {
       throw new Error('Only planned or paused trips can be started');
     }
     await TripService.startTrip(tripId);
+
+    const existingSteps = await stepStorage.getForTrip(tripId);
+    if (existingSteps.length === 0) {
+      const items = await itineraryStorage.getForTrip(tripId);
+      const dest = trip.destinationId
+        ? getDestination(trip.destinationId)
+        : undefined;
+      const fallback: GeoPoint = dest?.center ?? {
+        latitude: 48.8566,
+        longitude: 2.3522,
+      };
+      for (const item of items) {
+        await JournalingService.createManualStep({
+          tripId,
+          name: item.title,
+          type: itineraryTypeToStep(item.type),
+          location: item.location ?? fallback,
+          notes: item.notes
+            ? `From plan · ${item.notes}`
+            : 'Seeded from your itinerary',
+          startTime: item.startTime,
+        });
+        if (!item.isConfirmed) {
+          await this.updateItem(item.id, {isConfirmed: true});
+        }
+      }
+      log('PlanService: seeded journal from itinerary', items.length);
+    }
+
     const updated = await tripStorage.get(tripId);
     if (!updated) throw new Error('Trip missing after start');
     return updated;
